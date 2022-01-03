@@ -1,0 +1,16 @@
+High Priority
+- figureout why error occurs with choosedifferent pairs to subscribe to
+- Add a function in GA to unsunscribe from coins that do not perform well. This way the llimit of 300 will include only coins that have a goodchance atproducing a profit
+- Improve connection error handing 
+- Volume order sizing (Include your order's impact on the order book. This is really import for executing sequences with the same coins back to back)
+- Update orderbooks when a trade is made
+
+Med Priority
+- Figure out why actual GA vector length is expected-1
+- Save a list of generated pre-determined sequences for different vector lengths, so sequences do not have to be generated on the fly
+- Add filter to subscribe all function to only include coins with certain volume, market cap
+
+Low Priority
+- Find out message rate and limit messages to be sent at that rate 
+- install wsaccel to speed up the socket
+- db9cd27a-92dd-4f4a-83ea-f6e4a2c2fb80
