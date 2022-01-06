@@ -30,7 +30,11 @@ class GeneticArbitrage:
         for i in range(vector_length-1):
             tradeable_w_A = [pair for pair in pairList if Cur_A in pair]
             #[tradeable_w_A.remove(pair) for pair in tradeable_w_A if Cur_A in pair]
-            
+
+            if not tradeable_w_A:
+                print(f"Couldn't match a tradeable pair with {Cur_A}")
+                return
+
             choice = random.choice(tradeable_w_A)
 
             if i < vector_length - 2:
@@ -90,7 +94,13 @@ class GeneticArbitrage:
     def cleanup_pairList(self):
         
         # Return pairs from pairlist if spread is not populated
-        pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].spread_populated()]
+        try:
+            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].spread_populated()]
+        except KeyError:
+            # Please please change this later
+            last_banned = load_obj("banned_coins")[-1]
+            self.pairList = tuple([pair for pair in self.pairList if last_banned not in pair])
+            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].spread_populated()]
         
         if not pairList:
             return []
@@ -112,7 +122,7 @@ class GeneticArbitrage:
 
         while len(population) > 2:
             # Evaluate sequences
-            profits = [self.get_sequence_profit(sequence) for sequence in population]
+            profits = [self.get_sequence_profit(sequence) for sequence in population if sequence]
             
             # Take the best
             i = profits.index(max(profits))
