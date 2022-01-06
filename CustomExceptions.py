@@ -1,5 +1,6 @@
 from util.obj_funcs import save_obj, load_obj
 
+
 class TooManyRequests(Exception):
     ''' Raised when the API is request to rapidly'''
     pass
@@ -13,8 +14,9 @@ class OrderVolumeDepthError(Exception):
         print("\n Order Volume deph not sufficient")
         print(f"Banning {coin_name} \n")
 
-        keys = ExchangeData.Pairs.keys()
-        for pair in keys:
+ 
+        for pair in list(ExchangeData.Pairs):
             if coin_name in pair:
-                del ExchangeData.Pairs[pair]
+                ExchangeData.Pairs.pop(pair)
+                
 
