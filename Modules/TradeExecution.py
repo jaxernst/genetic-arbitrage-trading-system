@@ -150,6 +150,7 @@ class TradeExecution:
         book_sizes = [float(s) for s in book_sizes]
         
         if iter_num > 5:
+            # First degub: occured when a volume on the first level was negative
             a = 1
 
         if len(book_prices) != len(book_sizes):
@@ -316,14 +317,21 @@ class TradeExecution:
         book_sizes = list(zip(*orderbook))[1]
         
         i = 0
-        while sum(book_sizes[:i+1]) < amount:
+        while book_sizes[i] <= amount:
+            amount -= book_sizes[i]
+            orderbook[i][1] = 0
             i += 1
             if i > len(book_sizes):
                 raise OrderVolumeDepthError(pair[0])
 
+        print(f"Simulating orderbook impact at {i+1} level/s")
+        
         # Subtract volume from the last level reached with the amount trade
         orderbook[i][1] -= amount
         
+        if orderbook[i][1] <= 0:
+            raise Exception
+
         # Remove price levels where volume is fully consumed (if first level isn't enough to cover)
         orderbook = orderbook[i:]
         
