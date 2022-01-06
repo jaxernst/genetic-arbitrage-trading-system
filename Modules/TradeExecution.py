@@ -333,17 +333,3 @@ class TradeExecution:
         if trade_type == "sell":
             self.DataManager.Pairs[pair].orderbook['bids'] = orderbook
             self.DataManager.Pairs[pair].ask = orderbook[0][0]   
-
-
-        
-
-
-
- # Say sequence is ETH/USD, ETH/BTC, BTC,USD
- # Start with 100 usd
- # I need to buy x amount of ETH for all 100 dollars (that is price ETH/amount usd owned)
- # Need to know the price of ETH --> start with the best ask 
- # Est. Volume of ETH to trade is best ask/amount_owned
- # Now check if this volume is covered by the best ask size
- # If it is, continue
- # Else, check how many price steps up we have to go up to cover the volume at the best ask
