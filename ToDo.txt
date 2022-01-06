@@ -4,13 +4,17 @@ High Priority
 - Improve connection error handing 
 - Volume order sizing (Include your order's impact on the order book. This is really import for executing sequences with the same coins back to back)
 - Update orderbooks when a trade is made
+- Improve base currency handling (USDT/USD)
+- Change all sequences variable to use Pair objs instead of tuples
 
 Med Priority
 - Figure out why actual GA vector length is expected-1
 - Save a list of generated pre-determined sequences for different vector lengths, so sequences do not have to be generated on the fly
 - Add filter to subscribe all function to only include coins with certain volume, market cap
+- Write a test to check if expexted fills match actual fill prices
 
 Low Priority
 - Find out message rate and limit messages to be sent at that rate 
 - install wsaccel to speed up the socket
 - db9cd27a-92dd-4f4a-83ea-f6e4a2c2fb80
+- create reppr for Session

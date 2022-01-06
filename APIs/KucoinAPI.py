@@ -8,11 +8,13 @@ import json
 import Config
 import re
 
+from CustomExceptions import TooManyRequests
 from util import events
+from util.obj_funcs import load_obj
 from util.currency_filters import remove_single_swapabble_coins
 from APIs.WebSocketClient import WebSocketClient
 from APIs.abstract import ExchangeAPI
-from Models import Portfolio
+from Models.PortfolioModel import Portfolio
 
 ####################################################
 
@@ -68,8 +70,9 @@ class KucoinAPI(ExchangeAPI):
         pairs2 =[]
         results = r['data']
         for pair_data in results:
-            base, qoute = pair_data["symbol"].split("-")
-            if base not in Config.skipCurrencies and qoute not in Config.skipCurrencies:
+            base, qoute = pair_data["symbol"].split("-") 
+            skip = Config.skipCurrencies + load_obj("banned_coins")
+            if base not in skip and qoute not in skip:
                 pairs2.append((base,qoute))
                 if tuple_separate:
                     pairs.append((base,qoute))
@@ -91,7 +94,7 @@ class KucoinAPI(ExchangeAPI):
             return (float(bid), float(ask), float(last))
         else:
             print(r)
-            raise Exception("No data from ticker data request")   
+            raise Exception("No data from ticker data request")
  
     def get_multiple_spreads(self, pairs: List[tuple]) -> List[Tuple[float]]:
         urls = [f"{self.SERVER}{self.TICKER_ENDPOINT}?symbol={pair[0]}-{pair[1]}" for pair in pairs] 
@@ -100,10 +103,13 @@ class KucoinAPI(ExchangeAPI):
         
         out = {}
         for response in response_list:
-            data = response.json()['data']
-            out['bid'] = float(data['bestBid'])
-            out['ask'] = float(data['bestAsk'])
-            out['last'] = float(data['price'])
+            data = response.json()
+            if 'data' in data:     
+                out['bid'] = float(data['data']['bestBid'])
+                out['ask'] = float(data['data']['bestAsk'])
+                out['last'] = float(data['data']['price'])
+            else:
+                raise Exception(f"Unexpected response from API: {data}")
 
         return out
     
@@ -115,11 +121,15 @@ class KucoinAPI(ExchangeAPI):
         
         out = {}
         for i, response in enumerate(response_list):
-            data = response.json()['data']
-            out[pairs[i]] = {}
-            out[pairs[i]]['bids'] = data['bids']
-            out[pairs[i]]['asks'] = data['asks']
-
+            data = response.json()
+            if 'data' in data:
+                out[pairs[i]] = {}
+                out[pairs[i]]['bids'] = data['data']['bids']
+                out[pairs[i]]['asks'] = data['data']['asks']
+            elif data['code'] == '429000':
+                raise TooManyRequests
+            else:
+                raise Exception (f"Unexpected response from API: {data}")
         return out
     
     def add_price_stream(self, pair:Tuple[str]) -> None:
@@ -190,14 +200,6 @@ class KucoinAPI(ExchangeAPI):
         '''Request portfolio information for an authenticated account and returns a portfolio object'''
         balances = {}
         return Portfolio()
-
-
-    
-
-
-
-
-        
         
 
         

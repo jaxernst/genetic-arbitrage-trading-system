@@ -4,29 +4,22 @@ from APIs.abstract import ExchangeAPI
 from util import events
 import time
 
-@dataclass
-class Coin:
-    ticker: str
-    orders: dict = None 
-    price: float = None # Price in USD
-    fullName: str = None # Will have to create  a key:pair dict with all tickers and their names
-    balance: float = None 
 
 @dataclass
 class Pair:
-    base: Coin
-    qoute: Coin
+    base: str
+    qoute: str
     bid: float = None
     ask: float = None
     close: float = None
-    bids: list = None
-    asks: list = None
-    #basePrice: base.price
+    orderbook: dict = None
     lastUpdated: float = time.time()
     exchange = None
 
     def __post_init__(self):
-        self.ticker = f"{self.base.ticker}/{self.qoute.ticker}"
+        self.ticker = f"{self.base}/{self.qoute}"
+        self.sym = self.base + "/" + self.qoute
+
     def spread_populated(self):
         return bool(self.bid and self.ask)
 
@@ -55,7 +48,7 @@ class ExchangeData:
         base = pair[0]
         qoute = pair[1]
         if pair not in self.Pairs:
-            self.Pairs[pair] = Pair(Coin(base), Coin(qoute))
+            self.Pairs[pair] = Pair(base, qoute)
         
         self.Pairs[pair].close =  float(data['close'])
         self.Pairs[pair].ask = float(data['ask'])
@@ -84,9 +77,9 @@ class ExchangeData:
             if (base, qoute) not in self.Pairs:
                 if populateSpread:
                     bid, ask, close  = self.update_spread((base,qoute))
-                    self.Pairs[(base, qoute)] = Pair(Coin(base), Coin(qoute), bid, ask, close)
+                    self.Pairs[(base, qoute)] = Pair(base, qoute, bid, ask, close)
                 else:
-                    self.Pairs[(base, qoute)] = Pair(Coin(base), Coin(qoute))
+                    self.Pairs[(base, qoute)] = Pair(base, qoute)
 
     def update_spread(self, pair):
         return self.API.get_pair_spread(pair)
@@ -101,4 +94,4 @@ class ExchangeData:
                 self.Pairs[pair].last_updated = time.time()
     
     def getPriceHistory():
-        pass
+        pass  

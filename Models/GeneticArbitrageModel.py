@@ -106,8 +106,9 @@ class GeneticArbitrageModel:
         cleaned_pairs = self.cleanup_pairList() # Removes pairList pairs if there is only one qoute currency
         if len(cleaned_pairs) < 100:
             return (None, None)
-
-        population = [self.generate_sequence(cleaned_pairs, self.sequence_length, self.base_cur, self.base_cur) for _ in range(self.set_size)]
+        
+        lengths = (3, 4, 5)
+        population = [self.generate_sequence(cleaned_pairs, random.choice(lengths), self.base_cur, self.base_cur) for _ in range(self.set_size)]
 
         while len(population) > 2:
             # Evaluate sequences
@@ -140,7 +141,7 @@ class GeneticArbitrageModel:
                         owned = cutoff_sequence[-1][1][1]  
                     
                     mutated = cutoff_sequence + self.generate_sequence(cleaned_pairs, 
-                                                                       self.sequence_length - len(cutoff_sequence), 
+                                                                       len(sequence) - len(cutoff_sequence), 
                                                                        starting_cur=owned, 
                                                                        ending_cur=self.base_cur)
                     population[i] = mutated

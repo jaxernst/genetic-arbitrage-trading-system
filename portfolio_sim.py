@@ -1,20 +1,12 @@
 
 from APIs import KrakenAPI, KucoinAPI
-from Models import GeneticArbitrageModel, TradeExecutionModel, ExchangeData
+from CustomExceptions import OrderVolumeDepthError
+from Models import GeneticArbitrageModel, TradeExecutionModel, ExchangeData, Session
+from Models.PortfolioModel import Portfolio
 from util.obj_funcs import load_obj, save_obj
+from util.SequenceTracker import SequenceTracker
 import logging
 import time
-
-'''
-KrakenAPI = KrakenAPI()
-ExchangeData = ExchangeData(KrakenAPI)
-ExchangeData.base_fee = .0026
-krakenPairs = KrakenAPI.get_tradeable_pairs()
-ExchangeData.make_pairs(krakenPairs, populateSpread=False)
-KrakenAPI.subscribe_all()
-Trader = TradeExecutionModel(KrakenAPI, ExchangeData)
-GA1 = GeneticArbitrageModel(4, 400, ExchangeData)
-'''
 
 KucoinAPI = KucoinAPI()
 ExchangeData = ExchangeData(KucoinAPI)
@@ -28,75 +20,84 @@ KucoinAPI.subscribe_all(pairs=pairsToUse)
 KucoinAPI.maintain_connection()
 
 # Setup account
-Account = KucoinAPI.get_portfolio()
-Account.deposit_fiat(1000) # Put in $100
-Session = Account.start_trading_session("USDT", max_allocation=.5)
+trade_cur = "USDT"
 starting_bal = 1000
+min_volume = 100
+Account = KucoinAPI.get_portfolio()
+Account.deposit_fiat(starting_bal)
+Session = Session(Account, Account.balance[trade_cur], trade_cur, min_volume) # The session will update the parent account 
 
 # Setup trade execution models
 Trader = TradeExecutionModel(KucoinAPI, ExchangeData)
 
 # Setup arbitrage model
-sequence_length = 4
-set_size = 400
+sequence_length = 3
+set_size = 700
 GA1 = GeneticArbitrageModel(sequence_length, set_size, ExchangeData)
 
-sequence_prev =[]
+# Setup sequence tracker (remember sequences)
+Tracker = SequenceTracker(5)
 seq_name = ""
 last_traded = []
+GAprofits = []
+sequence_lengths = []
+RealProfits = [-100]
 winners = load_obj("winning_alts")
+t1 = time.time()
 i = 0
 trades = 0
 while True:
     GAprofit, sequence = GA1.do_evolution()
-    if sequence:
-        seq_name = list(zip(*sequence))[1]
     if GAprofit:
-        if GAprofit > -.001:
-            print(round(GAprofit, 5))
-
-    if GAprofit and seq_name != sequence_prev: # If new sequence has been found:
-        profit = Trader.execute_sequence(sequence, Session, ExchangeData)
+        GAprofits.append(GAprofit)
         if GAprofit > 0:
-            print(f"Potential trade found -- Profit: {round(GAprofit*100, 3)} % || Sequence: {seq_name}")
-        
-            profit = Trader.execute_sequence(sequence, Session, ExchangeData)
-            print(f"Real profit: {round(profit-1, 5)}")
-            Account.balance["USDT"] *= 1 + profit
-            if profit-1 > 0 and sequence != last_traded:
-                print("=========================")
-                print("Executing Trade")
-                print("=========================")
-                bal_0 = Account.balance
-                trades += 1
-                Trader.execute_sequence(sequence, profit* 1 - .0001, Session)
-                bal_1 = Account.balance
-                print( "")
-                print(f"Account balance increased by {round(bal_1 - bal_0,3)} %")
-                print("")
-                print("=================")
-                last_traded = sequence
-            else:
-                print("Trade not verified")
-        
-        for tuple in sequence:
-            if tuple[1][0] not in winners:
-                print(f"appending:{tuple[1][0]}")
-                winners.append(tuple[1][0])
+            if sequence not in Tracker.recents:
+                print(f"Potential trade found -- Profit: {round(GAprofit*100, 3)} % || Sequence: {sequence}")
+                Tracker.remember(sequence)
+            
+                try:
+                    profit = Trader.execute_sequence(sequence, Session, ExchangeData)
+                except OrderVolumeDepthError:
+                    continue
 
-    sequence_prev = seq_name
-    i += 1
+                RealProfits.append(profit)
+                print(f"Real profit: {round(profit, 5)}")
+                
+                if not profit > 0:
+                    print("Trade not verified")
+                else:
+                    sequence_lengths.append(len(sequence))
+
+                for tuple in sequence:
+                    if tuple[1][0] not in winners:
+                        print(f"appending:{tuple[1][0]}")
+                        winners.append(tuple[1][0])
+
+        Tracker.update_recents()
+        i += 1
+
+        if i % 100 == 0:
+            print("")
+            print(f"Session balance: {round(Session.balance,3)}")
+            print(f"Account balance: {round(Account.balance['USDT'],3)}")
+
+            print(f"Percentage Gain: {round(100*Session.PL, 3)} %")
+            print(f"Number of trades: {Session.trades}")
+            print(f"Best GA profit: {round(max(GAprofits),5)}")
+            print(f"Best Real profit: {round(max(RealProfits),5)}")
+            if sequence_lengths:
+                print(f"Average profitable sequence length: {sum(sequence_lengths) / len(sequence_lengths)}")
+            print(f"Elasped: {round((time.time() - t1)/60, 3)} minutes")
+            print("")
+
     time.sleep(.05)
 
     if i % 500 == 0:
-        save_obj(winners, "winning_alts")
+        save_obj(winners, "profitable_alts")
 
-    if i % 150 == 0:
-        print("")
-        print(f"Current balance: {round(Account.balance['USDT'],3)}")
-        print(f"Percentage Gain: {round(100*(Account.balance['USDT'] - starting_bal)/starting_bal, 3)} %")
-        print(f"Number of trades: {trades}")
-        print("")
+    
+
+
 
 
 
