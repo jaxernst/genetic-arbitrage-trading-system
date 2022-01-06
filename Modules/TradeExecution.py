@@ -273,15 +273,16 @@ class TradeExecution:
             self.log_trade(pair, type, exp_fills[i], cur_amount)
             
             if type == "buy":
-                # For buying, impact orderbook with previous current amount while its still in the qoute currency
-                if self.simulation_mode:
-                    self.simulate_orderbook_impact(pair, cur_amount, type)
                 cur_amount = Session.buy_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
-            if type == "sell":
-                cur_amount = Session.sell_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
-                # For selling, impact the orderbook with new current amount so voume is in qoute currency
+                # For buying, impact orderbook with new current amount once it's in the base currency
                 if self.simulation_mode:
                     self.simulate_orderbook_impact(pair, cur_amount, type)
+            if type == "sell":
+                # For selling, impact the orderbook with the current amount while its still in the base currency
+                if self.simulation_mode:
+                    self.simulate_orderbook_impact(pair, cur_amount, type)
+                cur_amount = Session.sell_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
+                
         
         Session.update_PL() 
         ending_trade_bal = cur_amount
@@ -306,8 +307,10 @@ class TradeExecution:
     def simulate_orderbook_impact(self, pair, amount, trade_type):
         ''' Update the orderbook to reflect the impact of a trade'''
         if trade_type == "buy":
+            order_type = 'asks'
             orderbook = self.DataManager.Pairs[pair].orderbook['asks']    
         if trade_type == "sell":
+            order_type = 'bids'
             orderbook = self.DataManager.Pairs[pair].orderbook['bids']
         book_sizes = list(zip(*orderbook))[1]
         
@@ -320,10 +323,10 @@ class TradeExecution:
         # Subtract volume from the last level reached with the amount trade
         orderbook[i][1] -= amount
         
-        # Remove price levels where volume is fully consumed
+        # Remove price levels where volume is fully consumed (if first level isn't enough to cover)
         orderbook = orderbook[i:]
         
-        
+        self.DataManager.Pairs[pair].orderbook[order_type] = orderbook
 
 
         
