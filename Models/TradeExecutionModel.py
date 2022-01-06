@@ -271,12 +271,17 @@ class TradeExecutionModel:
         for i, trade in enumerate(sequence):
             type, pair = trade
             self.log_trade(pair, type, exp_fills[i], cur_amount)
+            
             if type == "buy":
-                cur_amount = Session.buy_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
+                # For buying, impact orderbook with previous current amount while its still in the qoute currency
                 if self.simulation_mode:
                     self.simulate_orderbook_impact(pair, cur_amount, type)
+                cur_amount = Session.buy_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
             if type == "sell":
                 cur_amount = Session.sell_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
+                # For selling, impact the orderbook with new current amount so voume is in qoute currency
+                if self.simulation_mode:
+                    self.simulate_orderbook_impact(pair, cur_amount, type)
         
         Session.update_PL() 
         ending_trade_bal = cur_amount
