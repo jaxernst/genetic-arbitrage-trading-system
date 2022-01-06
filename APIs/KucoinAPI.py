@@ -124,8 +124,8 @@ class KucoinAPI(ExchangeAPI):
             data = response.json()
             if 'data' in data:
                 out[pairs[i]] = {}
-                out[pairs[i]]['bids'] = data['data']['bids']
-                out[pairs[i]]['asks'] = data['data']['asks']
+                out[pairs[i]]['bids'] = [[float(x) for x in sublist] for sublist in data['data']['bids']]
+                out[pairs[i]]['asks'] = [[float(x) for x in sublist] for sublist in data['data']['asks']]
             elif data['code'] == '429000':
                 raise TooManyRequests
             else:

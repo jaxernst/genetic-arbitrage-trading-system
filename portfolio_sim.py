@@ -20,12 +20,12 @@ KucoinAPI.subscribe_all(pairs=pairsToUse)
 KucoinAPI.maintain_connection()
 
 # Setup account
-trade_cur = "USDT"
+funding_cur = "USDT"
 starting_bal = 1000
 min_volume = 100
 Account = KucoinAPI.get_portfolio()
 Account.deposit_fiat(starting_bal)
-Session = Session(Account, Account.balance[trade_cur], trade_cur, min_volume) # The session will update the parent account 
+Session = Session(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, min_volume) # The session will update the parent account 
 
 # Setup trade execution models
 Trader = TradeExecutionModel(KucoinAPI, ExchangeData)
@@ -50,13 +50,14 @@ while True:
     GAprofit, sequence = GA1.do_evolution()
     if GAprofit:
         GAprofits.append(GAprofit)
+        #profit = Trader.execute_sequence(sequence, Session)
         if GAprofit > 0:
             if sequence not in Tracker.recents:
-                print(f"Potential trade found -- Profit: {round(GAprofit*100, 3)} % || Sequence: {sequence}")
+                print(f"Potential trade found -- Profit: {round(GAprofit*100, 6)} % || Sequence: {sequence}")
                 Tracker.remember(sequence)
             
                 try:
-                    profit = Trader.execute_sequence(sequence, Session, ExchangeData)
+                    profit = Trader.execute_sequence(sequence, Session)
                 except OrderVolumeDepthError:
                     continue
 
@@ -76,15 +77,14 @@ while True:
         Tracker.update_recents()
         i += 1
 
-        if i % 100 == 0:
+        if i % 1000 == 0:
             print("")
-            print(f"Session balance: {round(Session.balance,3)}")
+            print(f"Session balance: {round(Session.balance['USDT'],3)}")
             print(f"Account balance: {round(Account.balance['USDT'],3)}")
-
             print(f"Percentage Gain: {round(100*Session.PL, 3)} %")
             print(f"Number of trades: {Session.trades}")
-            print(f"Best GA profit: {round(max(GAprofits),5)}")
-            print(f"Best Real profit: {round(max(RealProfits),5)}")
+            print(f"Best GA profit: {round(100*max(GAprofits),5)} %")
+            print(f"Best Real profit: {round(100*max(RealProfits),5)} %")
             if sequence_lengths:
                 print(f"Average profitable sequence length: {sum(sequence_lengths) / len(sequence_lengths)}")
             print(f"Elasped: {round((time.time() - t1)/60, 3)} minutes")
