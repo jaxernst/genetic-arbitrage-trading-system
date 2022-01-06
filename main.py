@@ -11,8 +11,8 @@ KucoinAPI = KucoinAPI()
 ExchangeData = ExchangeData(KucoinAPI)
 ExchangeData.base_fee = .0010
 
-tuplePairs = KucoinAPI.get_tradeable_pairs(tuple_separate=True)[50:350]
-pairsToUse = KucoinAPI.get_tradeable_pairs(tuple_separate=False)[50:350]
+tuplePairs = KucoinAPI.get_tradeable_pairs(tuple_separate=True)[:300]
+pairsToUse = KucoinAPI.get_tradeable_pairs(tuple_separate=False)[:300]
 ExchangeData.make_pairs(tuplePairs, populateSpread=False)
 
 KucoinAPI.subscribe_all(pairs=pairsToUse)
@@ -36,8 +36,9 @@ GA1 = GeneticArbitrage(sequence_length, set_size, ExchangeData)
 
 # Setup sequence tracker (remember sequences)
 Tracker = SequenceTracker(5)
+
 seq_name = ""
-last_traded = []
+last_found = None
 GAprofits = []
 sequence_lengths = []
 RealProfits = [-100]
@@ -54,7 +55,7 @@ while True:
             if sequence not in Tracker.recents:
                 print(f"Potential trade found -- Profit: {round(GAprofit*100, 6)} % || Sequence: {sequence}")
                 Tracker.remember(sequence)
-            
+
                 try:
                     profit = Trader.execute_sequence(sequence, Session)
                 except OrderVolumeDepthError:
@@ -72,11 +73,10 @@ while True:
                     if tuple[1][0] not in winners:
                         print(f"appending:{tuple[1][0]}")
                         winners.append(tuple[1][0])
-
-        Tracker.update_recents()
+      
         i += 1
 
-        if i % 1000 == 0:
+        if i % 200 == 0:
             print("")
             print(f"Session balance: {round(Session.balance['USDT'],3)}")
             print(f"Account balance: {round(Account.balance['USDT'],3)}")
