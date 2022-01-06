@@ -143,12 +143,15 @@ class TradeExecution:
         else:
             return self.get_real_fill_price_buy(trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=fill_price)
 
-    def get_real_fill_price_sell(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None):
+    def get_real_fill_price_sell(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None, iter_num=0):
         ''' Calculate the real fill price to purchase/sell a currency with the amount of funds available'''
         convergence_tol = .001 # The test_volume has to be within .5% of the real_volume
         book_prices = [float(p) for p in book_prices]
         book_sizes = [float(s) for s in book_sizes]
         
+        if iter_num > 5:
+            a = 1
+
         if len(book_prices) != len(book_sizes):
             raise Exception("Book sizes and prices mmust be the same length")
         
@@ -174,7 +177,7 @@ class TradeExecution:
         if abs((real_volume - test_volume)/test_volume) < convergence_tol:
             return fill_price
         else:
-            return self.get_real_fill_price_sell(trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=fill_price)    
+            return self.get_real_fill_price_sell(trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=fill_price, iter_num=iter_num+1)    
     
     def get_real_sequence_profit(self, sequence, owned_amount=None):
         ''' Check is the sequence matches the expected profit to within a specified tolerance
@@ -307,10 +310,8 @@ class TradeExecution:
     def simulate_orderbook_impact(self, pair, amount, trade_type):
         ''' Update the orderbook to reflect the impact of a trade'''
         if trade_type == "buy":
-            order_type = 'asks'
             orderbook = self.DataManager.Pairs[pair].orderbook['asks']    
         if trade_type == "sell":
-            order_type = 'bids'
             orderbook = self.DataManager.Pairs[pair].orderbook['bids']
         book_sizes = list(zip(*orderbook))[1]
         
@@ -326,7 +327,12 @@ class TradeExecution:
         # Remove price levels where volume is fully consumed (if first level isn't enough to cover)
         orderbook = orderbook[i:]
         
-        self.DataManager.Pairs[pair].orderbook[order_type] = orderbook
+        if trade_type == "buy":
+            self.DataManager.Pairs[pair].orderbook['asks'] = orderbook
+            self.DataManager.Pairs[pair].bid = orderbook[0][0]
+        if trade_type == "sell":
+            self.DataManager.Pairs[pair].orderbook['bids'] = orderbook
+            self.DataManager.Pairs[pair].ask = orderbook[0][0]   
 
 
         
