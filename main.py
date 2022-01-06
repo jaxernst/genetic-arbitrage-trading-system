@@ -1,7 +1,7 @@
 from APIs import KrakenAPI, KucoinAPI
 from CustomExceptions import OrderVolumeDepthError
-from Models import GeneticArbitrageModel, TradeExecutionModel, ExchangeData, Session
-from Models.PortfolioModel import Portfolio
+from Modules import GeneticArbitrage, TradeExecution, ExchangeData, Session
+from Modules.Portfolio import Portfolio
 from util.obj_funcs import load_obj, save_obj
 from util.SequenceTracker import SequenceTracker
 import logging
@@ -26,13 +26,13 @@ Account = KucoinAPI.get_portfolio()
 Account.deposit_fiat(starting_bal)
 Session = Session(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, min_volume) # The session will update the parent account 
 
-# Setup trade execution models
-Trader = TradeExecutionModel(KucoinAPI, ExchangeData)
+# Setup trade execution Modules
+Trader = TradeExecution(KucoinAPI, ExchangeData)
 
-# Setup arbitrage model
+# Setup arbitrage 
 sequence_length = 3
 set_size = 700
-GA1 = GeneticArbitrageModel(sequence_length, set_size, ExchangeData)
+GA1 = GeneticArbitrage(sequence_length, set_size, ExchangeData)
 
 # Setup sequence tracker (remember sequences)
 Tracker = SequenceTracker(5)
@@ -41,7 +41,7 @@ last_traded = []
 GAprofits = []
 sequence_lengths = []
 RealProfits = [-100]
-winners = load_obj("winning_alts")
+winners = load_obj("profitable_alts")
 t1 = time.time()
 i = 0
 trades = 0
@@ -91,5 +91,3 @@ while True:
 
     time.sleep(.05)
 
-    if i % 500 == 0:
-        save_obj(winners, "profitable_alts")

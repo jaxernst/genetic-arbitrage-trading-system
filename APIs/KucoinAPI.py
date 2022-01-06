@@ -14,7 +14,7 @@ from util.obj_funcs import load_obj
 from util.currency_filters import remove_single_swapabble_coins
 from APIs.WebSocketClient import WebSocketClient
 from APIs.abstract import ExchangeAPI
-from Models.PortfolioModel import Portfolio
+from Modules.Portfolio import Portfolio
 
 ####################################################
 

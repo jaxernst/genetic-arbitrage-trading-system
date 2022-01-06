@@ -3,8 +3,8 @@ from typing import Dict
 import time
 
 from APIs.abstract import ExchangeAPI
-from Models import DataManagementModel, ExchangeData, Pair
-from Models.PortfolioModel import Portfolio
+from Modules import DataManagement, ExchangeData, Pair
+from Modules.Portfolio import Portfolio
 from util.obj_funcs import save_obj, load_obj
 from CustomExceptions import OrderVolumeDepthError, TooManyRequests
 
@@ -96,7 +96,7 @@ class Session:
         self.PL = (self.balance[self.starting_cur] - self.starting_balance) / self.starting_balance
         
 
-class TradeExecutionModel:
+class TradeExecution:
     # Interfaces with the API to execute trades
     # Determines how much sequence volume can be traded based on order book
     def __init__(self, API:ExchangeAPI, DataManager:ExchangeData, flexible_volume=True):

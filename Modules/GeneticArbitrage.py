@@ -3,10 +3,10 @@ from statistics import median
 from typing import Tuple
 from util.obj_funcs import load_obj
 from util.currency_filters import remove_single_swapabble_coins
-from Models.DataManagementModel import ExchangeData
-from Models.TradeExecutionModel import TradeExecutionModel
+from Modules.DataManagement import ExchangeData
+from Modules.TradeExecution import TradeExecution
 
-class GeneticArbitrageModel:
+class GeneticArbitrage:
     def __init__(self, sequence_length, set_size, DataManager:ExchangeData, base_cur="USDT"):
         ''' pairs: ({<pair> (str): (bid, ask), ...}'''
         self.DataManager = DataManager
@@ -234,6 +234,6 @@ class GeneticArbitrageModel:
 
 if __name__ == "__main__":
     Pairs = load_obj("pairs")
-    Broker = TradeExecutionModel()
-    GA = GeneticArbitrageModel(Pairs, Broker)  
+    Broker = TradeExecution()
+    GA = GeneticArbitrage(Pairs, Broker)  
     GA.do_evolution(4, 1000)    

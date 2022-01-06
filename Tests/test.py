@@ -1,7 +1,7 @@
 import pickle
 
-from TradeExecutionModel import TradeExecutionModel
-from GeneticArbitrageModel import GeneticArbitrageModel
+from TradeExecution import TradeExecution
+from GeneticArbitrage import GeneticArbitrage
 from KrakenAPI import KrakenAPI
 from DataManagement import ExchangeData
 from util import *
@@ -14,7 +14,7 @@ KrakenData = ExchangeData(KrakenAPI)
 #KrakenData.make_pairs(krakenPairs, populateSpread=True)
 
 KrakenData.Pairs = Pairs
-GA = GeneticArbitrageModel(KrakenData) 
+GA = GeneticArbitrage(KrakenData) 
 print(GA.do_evolution(3,500))
 
 '''

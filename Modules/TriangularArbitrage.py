@@ -5,14 +5,14 @@ import Config
 
 # https://file.scirp.org/Html/9-9900153_22082.htm
 
-class ExecutionModel:
+class Execution:
     pass
 
-class TriangularArbitrageExecutionModel(ExecutionModel):
+class TriangularArbitrageExecution(Execution):
     pass
 
 
-class TriangularArbitrageIdentificationModel:
+class TriangularArbitrageIdentification:
     '''
     Purpose: Go through crypto currency pairs and identify 
     Everytime a pair's bid or ask gets updated, it should check arbitrage opprtunities with that pair
@@ -79,10 +79,10 @@ class TriangularArbitrageIdentificationModel:
             
             if all(pair.spread_populated() for pair in [Pair1, Pair2, Pair3]):
                 print("Looking for arbitrage trade: {Pair1.base.ticker}_{Pair1.qoute.ticker} to {Pair2.base.ticker}_{Pair2.qoute.ticker} to {Pair3.base.ticker}_{Pair3.qoute.ticker}")
-                ProfitModel = TriangularArbitrageProfitModel(Pair1, Pair2, Pair3, self.Exchange.fees)
-                ProfitModel.check_type1_profits()
+                Profit = TriangularArbitrageProfit(Pair1, Pair2, Pair3, self.Exchange.fees)
+                Profit.check_type1_profits()
     
-class TriangularArbitrageProfitModel:
+class TriangularArbitrageProfit:
     '''
     Calculates the profits of a triangular arbitrage trade assuming the 
     input Pairs have the most up to date price 
