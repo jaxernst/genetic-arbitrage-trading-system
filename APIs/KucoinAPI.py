@@ -5,6 +5,7 @@ from uuid import uuid4
 from time import sleep
 import requests
 import json
+from APIs.authentication import KucoinAuthenticator
 import Config
 import re
 
@@ -20,27 +21,40 @@ from Modules.Portfolio import Portfolio
 
 class KucoinAPI(ExchangeAPI):
     PAIR_UPDATE_EVENT_ID = "KucoinPairUpdate"
+    ORDER_UPDATE_EVENT_ID = "OrderStatusUpdate"
+    ACCOUNT_BALANCE_UPDATE_EVENT_ID = "AccountBalanceUpdate"
+
     SERVER = "https://api.kucoin.com"
     TICKER_ENDPOINT = "/api/v1/market/orderbook/level1"
     ORDERBOOK_ENDPOINT = "/api/v1/market/orderbook/level2_100"
     SYMBOLS_ENDPOINT = "/api/v1/symbols"
+    ACCOUNT_ENDPOINT = "/api/v1/accounts"
+    ORDER_ENDPOINT = "/api/v1/orders"
+    API_KEY = "61b80e172bb39300018012f3"
 
-    def __init__(self):
-        self.socket = WebSocketClient(self, url=self.generate_connection_url())
+    def __init__(self, private=True, sandbox=False):
+
+        if private:
+            if not sandbox:
+                self.Auth = KucoinAuthenticator(self.SERVER)
+            else:
+                self.Auth = KucoinAuthenticator("https://openapi-sandbox.kucoin.com")
+
+        self.socket = WebSocketClient(self, url=self.generate_connection_url(private))
         self.streaming = self.socket.connected
         self.showDataStream = False
         
         self.subscriptions = 0
         self.subscription_limit = 300
 
-    def generate_connection_url(self, private=False):
+    def generate_connection_url(self, private=True):
         # Request token
         if private:
-            req = "/api/v1/bullet-private" 
+            req = "/api/v1/bullet-private"
+            r = self.Auth.request(req, "POST").json()
         else:
             req = "/api/v1/bullet-public"
-        
-        r = requests.post(f"{self.SERVER}{req}").json()
+            r = requests.post(f"{self.SERVER}{req}").json()
         token = r['data']['token']
         
         # get endpoint and ping info
@@ -63,7 +77,7 @@ class KucoinAPI(ExchangeAPI):
         self.ping_thread = Thread(target=send_ping)
         self.ping_thread.daemon=True
         self.ping_thread.start()
-
+    
     def get_tradeable_pairs(self, tuple_separate=True, remove_singles=True) -> list:
         r = requests.get(f"{self.SERVER}{self.SYMBOLS_ENDPOINT}").json()
         pairs = []
@@ -83,8 +97,25 @@ class KucoinAPI(ExchangeAPI):
             pairs = remove_single_swapabble_coins(pairs2)
             if not tuple_separate:
                 pairs = [f"{pair[0]}-{pair[1]}" for pair in pairs]
+        
         return pairs
     
+    def get_pair_info(self, pairs=None):
+        r = requests.get(f"{self.SERVER}{self.SYMBOLS_ENDPOINT}").json()
+        
+        pair_info = {}
+        results = r['data']
+        for pair_data in results:
+            base, qoute = pair_data["symbol"].split("-") 
+            skip = Config.skipCurrencies + load_obj("banned_coins")
+            if pairs and (base,qoute) in pairs:
+                pair_info[(base,qoute)] = pair_data
+                continue
+            if base not in skip and qoute not in skip:
+                pair_info[(base, qoute)] = pair_data
+        
+        return pair_info
+
     def get_pair_spread(self, pair: Tuple[str]) -> Tuple[float]:        
         r = requests.get(f"{self.SERVER}{self.TICKER_ENDPOINT}?symbol={pair[0]}-{pair[1]}").json()
         if r['data']:
@@ -165,12 +196,29 @@ class KucoinAPI(ExchangeAPI):
                         "subscription": {"name": "ticker"}}
             self.socket.send(json.dumps(payload))      
     
+    def subscribe_order_status(self):
+        payload = { 'id': self.connectID,
+                    "type": "subscribe",
+                    "topic": "/spotMarket/tradeOrders",
+                    "privateChannel": "true"}
+
+        self.socket.send(json.dumps(payload))      
+    
+    def subscribe_account_balance_notice(self):
+        payload = { 'id': self.connectID,
+                    "type": "subscribe",
+                    "topic": "/account/balance",
+                    "privateChannel": "true"}
+
+        self.socket.send(json.dumps(payload)) 
+
     def stream_listen(self, message) -> None:
         ''' Receive incoming message and send on a tuple with the following format:
             (pair: str (i.e. ETHUSD), {payload: dict})
             
             - The payload will follow the kraken format, so for this class, the payload can be sent on as is
         '''
+
         # Ignoring hearbeat messages for now
         if self.showDataStream:
             print(message)
@@ -179,8 +227,7 @@ class KucoinAPI(ExchangeAPI):
         if message['type'] != "message":
             print(message)
             return
-        #print(message)
-        if message['data']:
+        if "/market/ticker" in message['topic']:
             ticker = re.search(r"ticker:(\w+-\w+)", message['topic']).group(1)
             base, qoute = ticker.split("-")
 
@@ -189,23 +236,61 @@ class KucoinAPI(ExchangeAPI):
             data['bid'] = message['data']['bestBid']
             data['ask'] = message['data']['bestAsk']
             events.post_event(self.PAIR_UPDATE_EVENT_ID, ((base,qoute),data))
-        else:
-            print(message)
-            raise Exception("No data in this message")
+            return
+        
+        if "/spotMarket/tradeOrders" in message['topic']:
+            events.post_event(self.ORDER_UPDATE_EVENT_ID, message['data'])
+        if "/account/balance" in message['topic']:
+            events.post_event(self.ACCOUNT_BALANCE_UPDATE_EVENT_ID, message['data'])
 
-    def authenticate(self):
-        ''' Have the user input credentials and authenticate rest api'''
+    def market_order(self, pair, side, size):
+        
+        oID = str(uuid4()).replace('-', '')
+        pair = f"{pair[0]}-{pair[1]}"
+        data = json.dumps({"clientOid":oID,
+                            "side":side.lower(),
+                            "symbol":pair,
+                            "size":size,
+                            "type":"market"})
 
-    def get_portfolio(self) -> Portfolio:
-        '''Request portfolio information for an authenticated account and returns a portfolio object'''
-        balances = {}
-        return Portfolio()
+        r = self.Auth.request(self.ORDER_ENDPOINT, "POST", data=data).json()
+        print(r)
+        return r
+
+    def get_portfolio(self, return_raw_balance=False) -> Portfolio:
+        '''Request portfolio information for an authenticated account and return a portfolio object'''
+        r = self.Auth.request(self.ACCOUNT_ENDPOINT, "GET").json()
+
+
+        balance = {}
+        for data in r['data']:
+            if data['type'] == "trade":
+                balance[data['currency']] = float(data['balance'])
+        
+        if return_raw_balance:
+            return balance
+
+        return Portfolio(balance)
+
         
 
         
 
     
     
-
+'''
+{'code': '200000',
+ 'data': [{'id': '61d7805ee6db18000163e0ff',
+   'currency': 'USDT',
+   'type': 'main',
+   'balance': '60',
+   'available': '60',
+   'holds': '0'},
+  {'id': '61d7805ee6db18000163e11e',
+   'currency': 'USDT',
+   'type': 'trade',
+   'balance': '36.658024',
+   'available': '36.658024',
+   'holds': '0'}]}'''
         
 
