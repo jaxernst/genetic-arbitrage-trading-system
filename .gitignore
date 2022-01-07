@@ -1,5 +1,13 @@
+#
+*.ipynb_checkpoints
+*.ipynb
+ToDo.txt
+References/
+Kucoin_API_Key.txt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*__pycache__/
 *.py[cod]
 *$py.class
 
