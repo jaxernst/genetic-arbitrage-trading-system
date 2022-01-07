@@ -1,6 +1,6 @@
 #
 *.ipynb_checkpoints
-*.ipynb
+research.ipynb
 ToDo.txt
 References/
 Kucoin_API_Key.txt
@@ -136,3 +136,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+research.ipynb
+dev.ipynb
