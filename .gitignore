@@ -3,12 +3,14 @@
 research.ipynb
 ToDo.txt
 References/
-Kucoin_API_Key.txt
+Kucoin_API_Key.json
 test_auth.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*__pycache__/
+Modules/__pycache__/
+APIs/__pycache__/
+util/__pycache__/
 *.py[cod]
 *$py.class
 
@@ -140,3 +142,7 @@ dmypy.json
 
 research.ipynb
 dev.ipynb
+__pycache__/Config.cpython-39.pyc
+.gitignore
+APIs/__pycache__/KucoinAPI.cpython-39.pyc
+.gitignore
