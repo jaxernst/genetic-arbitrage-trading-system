@@ -5,6 +5,7 @@ from Modules.Portfolio import Portfolio
 from util.obj_funcs import load_obj, save_obj
 from util.SequenceTracker import SequenceTracker
 import logging
+
 import time
 
 KucoinAPI = KucoinAPI()
@@ -13,8 +14,8 @@ ExchangeData.base_fee = .0010
 
 tuplePairs = KucoinAPI.get_tradeable_pairs(tuple_separate=True)[:300]
 pairsToUse = KucoinAPI.get_tradeable_pairs(tuple_separate=False)[:300]
-ExchangeData.make_pairs(tuplePairs, populateSpread=False)
-
+pairInfo = KucoinAPI.get_pair_info(tuplePairs)
+ExchangeData.make_pairs(pairInfo, populateSpread=False)
 KucoinAPI.subscribe_all(pairs=pairsToUse)
 KucoinAPI.maintain_connection()
 
@@ -23,16 +24,17 @@ funding_cur = "USDT"
 starting_bal = 1000
 min_volume = 100
 Account = KucoinAPI.get_portfolio()
-Account.deposit_fiat(starting_bal)
-Session = Session(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, min_volume) # The session will update the parent account 
+#Account.deposit_fiat(starting_bal)
+Session = Session(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, 5) # The session will update the parent account 
 
 # Setup trade execution Modules
 Trader = TradeExecution(KucoinAPI, ExchangeData)
+Trader.simulation_mode = False
 
-# Setup arbitrage 
+# Setup arbitrage model
 sequence_length = 3
 set_size = 700
-GA1 = GeneticArbitrage(sequence_length, set_size, ExchangeData)
+GA1 = GeneticArbitrage(sequence_length, set_size, ExchangeData, base_cur=funding_cur)
 
 # Setup sequence tracker (remember sequences)
 Tracker = SequenceTracker(5)
