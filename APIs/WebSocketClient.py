@@ -2,11 +2,12 @@ from threading import Thread
 import json
 import websocket
 from time import sleep
-
+from CustomExceptions import SocketDisconnect
 from APIs import abstract
 
 class WebSocketClient:
     def __init__(self, parentExchange: abstract, url: str):
+        self.url = url
         self.ws = websocket.WebSocketApp(url, on_message=self.on_message, 
                                             on_open=self.on_open, 
                                             on_close=self.on_close)
@@ -31,6 +32,12 @@ class WebSocketClient:
         if not self.thread_started:
             self.connect()
 
+        # Check if sock has a conneciton
+        if not self.ws.sock:
+            reconnected = self.attempt_reconnect()
+            if not reconnected:
+                raise SocketDisconnect
+        
         # Send subcription request if connection is active
         if self.ws.sock.connected:
             self.ws.send(payload)
@@ -39,13 +46,13 @@ class WebSocketClient:
         
     def connect(self):
         # Setup thread 
-        wst = Thread(target=self.ws.run_forever)
-        wst.daemon = True
+        self.wst = Thread(target=self.ws.run_forever)
+        self.wst.daemon = True
         print("Starting socket thread...")
         self.thread_started = True
-        wst.start()
+        self.wst.start()
     
-        self.wait_for_connection()
+        return self.wait_for_connection()
     
     def wait_for_connection(self):
         error = False
@@ -67,3 +74,19 @@ class WebSocketClient:
                 print("Connection failed,  trying again...")
                 self.wait_for_connection()
         print("Socket Connected")
+        return True
+
+    def attempt_reconnect(self):
+        
+        self.ws.close()
+        self.wst.join()
+        self.thread_started = False
+
+        self.ws = None
+        self.ws = websocket.WebSocketApp(self.url, on_message=self.on_message, 
+                                            on_open=self.on_open, 
+                                            on_close=self.on_close)
+
+        print("Websocket disconnected, attempting to reconnect...")
+        sleep(5)
+        return self.connect()

@@ -16,6 +16,8 @@ class Pair:
     orderbook: dict = None
     lastUpdated: float = time.time()
     baseIncrement: float = None
+    qouteIncrement: float = None
+    fee: float = None
     exchange = None
 
     def __post_init__(self):
@@ -34,15 +36,16 @@ class ExchangeData:
         self.Orders = {}
         self.skipCurrencies = [] # Currencies to not collect data on
         self.showPairUpdates = False
-        self.base_fee = .0026
+        
         events.subscribe(API.PAIR_UPDATE_EVENT_ID, self.pair_update_listener)
-        events.subscribe(API.ORDER_UPDATE_EVENT_ID, self.order_update_listener)
+        #events.subscribe(API.ORDER_UPDATE_EVENT_ID, self.order_update_listener)
         
     def pair_update_listener(self, message: Tuple[tuple,Dict[str,str]]) -> None:
         '''
         This function is called whenpair data is received through the websocket.
         Mesaage: tuple = (("base","qoute"), {'close':..., 'ask':..., 'bid':...})
         '''
+
         pair = message[0]
         data = message[1]
         #print(message)
@@ -63,6 +66,7 @@ class ExchangeData:
             self.show_coins()
 
     def order_update_listener(self, message):
+        print("ExchangeData received order update")
         base, qoute = message['symbol'].split("-")
         self.Orders[(base,qoute)] = {}
 
@@ -82,9 +86,15 @@ class ExchangeData:
             if (base, qoute) not in self.Pairs:
                 if populateSpread:
                     bid, ask, close = self.update_spread((base,qoute))
-                    self.Pairs[(base, qoute)] = Pair(base, qoute, bid, ask, close, baseIncrement=pair_data['baseIncrement'])
+                    self.Pairs[(base, qoute)] = Pair(base, qoute, bid, ask, close, 
+                                                    baseIncrement=pair_data['baseIncrement'],
+                                                    qouteIncrement=pair_data['qouteIncrement'],
+                                                    fee=float(pair_data['fee']))
                 else:
-                    self.Pairs[(base, qoute)] = Pair(base, qoute, baseIncrement=pair_data['baseIncrement'])
+                    self.Pairs[(base, qoute)] = Pair(base, qoute, 
+                                                    baseIncrement=pair_data['baseIncrement'], 
+                                                    qouteIncrement=pair_data['quoteIncrement'],
+                                                    fee=float(pair_data['fee']))
 
     def update_spread(self, pair):
         return self.API.get_pair_spread(pair)

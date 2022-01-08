@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 from typing import List, Tuple
 from uuid import uuid4
-from time import sleep
+from time import sleep, time
 import requests
 import json
 from APIs.authentication import KucoinAuthenticator
@@ -30,7 +30,7 @@ class KucoinAPI(ExchangeAPI):
     SYMBOLS_ENDPOINT = "/api/v1/symbols"
     ACCOUNT_ENDPOINT = "/api/v1/accounts"
     ORDER_ENDPOINT = "/api/v1/orders"
-    API_KEY = "61b80e172bb39300018012f3"
+    TRADE_FEE_ENDPOINT = "/api/v1/trade-fee"
 
     def __init__(self, private=True, sandbox=False):
 
@@ -44,7 +44,9 @@ class KucoinAPI(ExchangeAPI):
         self.streaming = self.socket.connected
         self.showDataStream = False
         
-        self.subscriptions = 0
+        self.ping_interval_scale = 1
+        self.last_pong_time = 0
+        self.payloads = [] # Stores subscription functions with arguements so they can be recalled when reconnect occurs
         self.subscription_limit = 300
 
     def generate_connection_url(self, private=True):
@@ -72,7 +74,15 @@ class KucoinAPI(ExchangeAPI):
                             "type":"ping"}
                 self.socket.send(json.dumps(payload))
                 print("sending ping")
-                sleep(self.pingInterval)
+                send_time = time()
+                sleep(self.pingInterval*self.ping_interval_scale)
+
+                if self.last_pong_time < send_time:
+                    # No pong received since last sent
+                    print("Pong not received...")
+                    if self.socket.attempt_reconnect():
+                        # If reconnect succesful, resubscribe
+                        self.reset_subscriptions()
 
         self.ping_thread = Thread(target=send_ping)
         self.ping_thread.daemon=True
@@ -101,13 +111,19 @@ class KucoinAPI(ExchangeAPI):
         return pairs
     
     def get_pair_info(self, pairs=None):
-        r = requests.get(f"{self.SERVER}{self.SYMBOLS_ENDPOINT}").json()
-        
+        r1 = requests.get(f"{self.SERVER}{self.SYMBOLS_ENDPOINT}").json()
+        r2 = self.Auth.request(f"{self.TRADE_FEE_ENDPOINT}", "GET").json()
         pair_info = {}
-        results = r['data']
+        results = r1['data']
+        fees = r2['data']
         for pair_data in results:
             base, qoute = pair_data["symbol"].split("-") 
             skip = Config.skipCurrencies + load_obj("banned_coins")
+            
+            for fee_dict in fees:
+                if fee_dict['symbol'] == pair_data['symbol']:
+                    pair_data['fee'] = fee_dict['taker']
+
             if pairs and (base,qoute) in pairs:
                 pair_info[(base,qoute)] = pair_data
                 continue
@@ -116,7 +132,9 @@ class KucoinAPI(ExchangeAPI):
         
         return pair_info
 
+    
     def get_pair_spread(self, pair: Tuple[str]) -> Tuple[float]:        
+        
         r = requests.get(f"{self.SERVER}{self.TICKER_ENDPOINT}?symbol={pair[0]}-{pair[1]}").json()
         if r['data']:
             bid = r['data']['bestBid']
@@ -165,16 +183,26 @@ class KucoinAPI(ExchangeAPI):
     
     def add_price_stream(self, pair:Tuple[str]) -> None:
         # Facillitate easy selection of payload type, build payload, then send the dictionary to the socket
+        self.topics_in_use.append("/market/ticker:{pair[0]}-{pair[1]}")
         payload = { 'id': self.connectID,
                     "type": "subscribe",
                     "topic": f"/market/ticker:{pair[0]}-{pair[1]}",
                     "privateChannel": False}
+        self.payloads.append(payload)
         self.socket.send(json.dumps(payload))
     
-    def remove_price_stream(self, pair:Tuple[str]):
-        pass
+    def reset_subscriptions(self):
+        for payload in self.payloads:
+            payload['type'] = "unsubscribe"
+            self.socket.send(json.dumps(payload)) 
+            sleep(.1)     
+        for payload in self.payloads:
+            payload['type'] = "subscribe"
+            self.socket.send(json.dumps(payload)) 
+            sleep(.1)  
 
-    def subscribe_all(self, limit:int=None, pairs: List[str]=None) -> None:
+    def subscribe_all(self, limit:int=300, pairs: List[str]=None) -> None:
+
         if not pairs:
             pairs = self.get_tradeable_pairs(tuple_separate=False)
         
@@ -185,15 +213,14 @@ class KucoinAPI(ExchangeAPI):
             # looping till length l
             for i in range(0, len(l), n): 
                 yield l[i:i + n]
-        
-        pair_iter = list(divide_chunks(pairs, 100))
 
-        for pairs in pair_iter:
+        for pairs in divide_chunks(pairs, 100):
             tickers = ','.join([f"{pair}" for pair in pairs])
             payload = { 'id': self.connectID,
                         "type": "subscribe",
                         "topic": f"/market/ticker:{tickers}",
                         "subscription": {"name": "ticker"}}
+            self.payloads.append(payload)
             self.socket.send(json.dumps(payload))      
     
     def subscribe_order_status(self):
@@ -201,7 +228,7 @@ class KucoinAPI(ExchangeAPI):
                     "type": "subscribe",
                     "topic": "/spotMarket/tradeOrders",
                     "privateChannel": "true"}
-
+        self.payloads.append(payload)
         self.socket.send(json.dumps(payload))      
     
     def subscribe_account_balance_notice(self):
@@ -209,7 +236,7 @@ class KucoinAPI(ExchangeAPI):
                     "type": "subscribe",
                     "topic": "/account/balance",
                     "privateChannel": "true"}
-
+        self.payloads.append(payload)
         self.socket.send(json.dumps(payload)) 
 
     def stream_listen(self, message) -> None:
@@ -224,9 +251,15 @@ class KucoinAPI(ExchangeAPI):
             print(message)
 
         message = json.loads(message)
+
+        if message['type'] == "pong":
+            print(message)
+            self.last_pong_time = time()
+            return
         if message['type'] != "message":
             print(message)
             return
+
         if "/market/ticker" in message['topic']:
             ticker = re.search(r"ticker:(\w+-\w+)", message['topic']).group(1)
             base, qoute = ticker.split("-")
@@ -243,14 +276,14 @@ class KucoinAPI(ExchangeAPI):
         if "/account/balance" in message['topic']:
             events.post_event(self.ACCOUNT_BALANCE_UPDATE_EVENT_ID, message['data'])
 
-    def market_order(self, pair, side, size):
-        
+    def market_order(self, pair, side, amount):
         oID = str(uuid4()).replace('-', '')
         pair = f"{pair[0]}-{pair[1]}"
+        volume_type = {"buy":"funds", "sell":"size"}
         data = json.dumps({"clientOid":oID,
                             "side":side.lower(),
                             "symbol":pair,
-                            "size":size,
+                            volume_type[side.lower()]:amount,
                             "type":"market"})
 
         r = self.Auth.request(self.ORDER_ENDPOINT, "POST", data=data).json()
@@ -271,26 +304,3 @@ class KucoinAPI(ExchangeAPI):
             return balance
 
         return Portfolio(balance)
-
-        
-
-        
-
-    
-    
-'''
-{'code': '200000',
- 'data': [{'id': '61d7805ee6db18000163e0ff',
-   'currency': 'USDT',
-   'type': 'main',
-   'balance': '60',
-   'available': '60',
-   'holds': '0'},
-  {'id': '61d7805ee6db18000163e11e',
-   'currency': 'USDT',
-   'type': 'trade',
-   'balance': '36.658024',
-   'available': '36.658024',
-   'holds': '0'}]}'''
-        
-

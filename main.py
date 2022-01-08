@@ -1,6 +1,6 @@
 from APIs import KrakenAPI, KucoinAPI
 from CustomExceptions import OrderVolumeDepthError
-from Modules import GeneticArbitrage, TradeExecution, ExchangeData, Session
+from Modules import GeneticArbitrage, TradeExecution, ExchangeData, SessionSim, SessionLive
 from Modules.Portfolio import Portfolio
 from util.obj_funcs import load_obj, save_obj
 from util.SequenceTracker import SequenceTracker
@@ -13,11 +13,12 @@ ExchangeData = ExchangeData(KucoinAPI)
 ExchangeData.base_fee = .0010
 
 tuplePairs = KucoinAPI.get_tradeable_pairs(tuple_separate=True)[:300]
-pairsToUse = KucoinAPI.get_tradeable_pairs(tuple_separate=False)[:300]
+pairsToSubscribe = KucoinAPI.get_tradeable_pairs(tuple_separate=False)[:300]
 pairInfo = KucoinAPI.get_pair_info(tuplePairs)
 ExchangeData.make_pairs(pairInfo, populateSpread=False)
-KucoinAPI.subscribe_all(pairs=pairsToUse)
+KucoinAPI.subscribe_all(pairs=pairsToSubscribe)
 KucoinAPI.maintain_connection()
+time.sleep(3) # Wait for socket to populate enough data for the Arbitrage model
 
 # Setup account
 funding_cur = "USDT"
@@ -25,7 +26,7 @@ starting_bal = 1000
 min_volume = 100
 Account = KucoinAPI.get_portfolio()
 #Account.deposit_fiat(starting_bal)
-Session = Session(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, 5) # The session will update the parent account 
+Session = SessionLive(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, 5) # The session will update the parent account 
 
 # Setup trade execution Modules
 Trader = TradeExecution(KucoinAPI, ExchangeData)
@@ -33,7 +34,7 @@ Trader.simulation_mode = False
 
 # Setup arbitrage model
 sequence_length = 3
-set_size = 700
+set_size = 400
 GA1 = GeneticArbitrage(sequence_length, set_size, ExchangeData, base_cur=funding_cur)
 
 # Setup sequence tracker (remember sequences)
@@ -50,10 +51,12 @@ i = 0
 trades = 0
 while True:
     GAprofit, sequence = GA1.do_evolution()
+
     if GAprofit:
         GAprofits.append(GAprofit)
         #profit = Trader.execute_sequence(sequence, Session)
         if GAprofit > 0:
+            #print("GAprofit found")
             if sequence not in Tracker.recents:
                 print(f"Potential trade found -- Profit: {round(GAprofit*100, 6)} % || Sequence: {sequence}")
                 Tracker.remember(sequence)
@@ -77,8 +80,7 @@ while True:
                         winners.append(tuple[1][0])
       
         i += 1
-
-        if i % 200 == 0:
+        if i % 500 == 0:
             print("")
             print(f"Session balance: {round(Session.balance['USDT'],3)}")
             print(f"Account balance: {round(Account.balance['USDT'],3)}")
@@ -91,5 +93,7 @@ while True:
             print(f"Elasped: {round((time.time() - t1)/60, 3)} minutes")
             print("")
 
-    time.sleep(.05)
+        if i % 800 == 0:
+            Session.refresh_balance()
+    
 

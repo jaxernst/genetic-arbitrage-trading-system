@@ -70,10 +70,10 @@ class GeneticArbitrage:
         return sequence
 
     def get_sequence_profit(self, sequence):
-        fee = self.DataManager.base_fee
         total = 1
         for tuple in sequence:
             type, pair = tuple
+            fee = self.DataManager.Pairs[pair].fee
             tx = 1 - fee
             if type == "buy":
                 ask = float(self.DataManager.Pairs[pair].ask)
@@ -117,7 +117,7 @@ class GeneticArbitrage:
         if len(cleaned_pairs) < 100:
             return (None, None)
         
-        lengths = (3, 4, 5)
+        lengths = (3, 4)
         population = [self.generate_sequence(cleaned_pairs, random.choice(lengths), self.base_cur, self.base_cur) for _ in range(self.set_size)]
 
         while len(population) > 2:

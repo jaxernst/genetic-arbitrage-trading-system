@@ -8,95 +8,7 @@ from Modules import DataManagement, ExchangeData, Pair
 from Modules.Portfolio import Portfolio
 from util.obj_funcs import save_obj, load_obj
 from CustomExceptions import OrderVolumeDepthError, TooManyRequests
-from util import events
-
-class Session:
-    def __init__(self, parent_account:Portfolio, API:ExchangeAPI, funding_balance:float, funding_cur:str, min_volume:int):
-        self.Account = parent_account
-        self.API = API
-        
-        if funding_balance <= 0:
-            raise Exception("Funding balance cannot be negative or zero")
-
-        self.starting_balance = funding_balance
-        self.starting_cur = funding_cur
-        self.min_volume = min_volume # minimum amount of volume that can be traded in funding cur
-
-        self.balance = {funding_cur:funding_balance} # Amount of money given to the trading session in base currency
-        self.trades = 0 # Number of trades executed during this session
-        self.PL = 0 # Current profit loss for the session
-        self.average_gain = None
-        
-    def buy_market(self, pair:tuple, amount, exp_fill, fee):
-        ''' Use fuill balance to buy pair at market
-            Session has no knowledge of fees, so exp_fill must be fee adjusted
-        '''
-        base, qoute = pair
-        tx = 1 - fee
-
-        if qoute not in self.balance or qoute not in self.Account.balance:
-            print(self.balance)
-            raise Exception(f"{qoute} needs to be held in order to buy {pair}")
-    
-        # Send a buy order to the API
-        self.API.market_order(pair, "buy", amount)
-        self.trades += 1
-        
-        # Update Account/Session's balance of the qoute currency (cost)
-        self.Account.balance[qoute] -= amount
-        self.balance[qoute] -= amount
-
-        # Update Session's balance of the base currency (buying)
-        new_amount = amount * (1/exp_fill) * tx
-        if base in self.balance:
-            self.balance[base] += new_amount
-        else:
-            self.balance[base] = new_amount
-        
-        # Update Account's balance of the base currency (buying)
-        if base in self.Account.balance:
-            self.Account.balance[base] += new_amount
-        else:
-            self.Account.balance[base] = new_amount
-
-        return new_amount
-
-    def sell_market(self, pair:tuple, amount, exp_fill, fee): 
-        ''' Use full balance to sell pair at market
-            Session has no knowledge of fees, so exp_fill must be fee adjusted
-        '''
-        base, qoute = pair
-        tx = 1 - fee
-
-        if base not in self.balance or base not in self.Account.balance:
-            raise Exception(f"{base} needs to be held in order to sell {pair}")
-    
-        # Send a buy order to the API
-        self.API.market_order(pair, "sell", amount)
-        self.trades += 1
-        
-        # Update Account/Session's balance of the base currency (selling)
-        self.Account.balance[base] -= amount
-        self.balance[base] -= amount
-
-        # Update Session's balance of the qoute currency (buying)
-        new_amount = amount * exp_fill * tx
-        if qoute in self.balance:
-            self.balance[qoute] += new_amount
-        else:
-            self.balance[qoute] = new_amount
-        
-        # Update Account's balance of the qoute currency (buying)
-        if qoute in self.Account.balance:
-            self.Account.balance[qoute] += new_amount
-        else:
-            self.Account.balance[qoute] = new_amount
-
-        return new_amount
-
-    def update_PL(self):
-        self.PL = (self.balance[self.starting_cur] - self.starting_balance) / self.starting_balance
-        
+from util import events        
 
 class TradeExecution:
     # Interfaces with the API to execute trades
@@ -107,7 +19,7 @@ class TradeExecution:
         self.API.subscribe_account_balance_notice()
         self.last_call = None # Data from the last API call]
         self.DataManager = DataManager
-        self.profit_tolerance = .0007
+        self.profit_tolerance = .002
         self.recently_traded = []
         self.last_balance_change = (None,None)
 
@@ -115,8 +27,7 @@ class TradeExecution:
         self.flexible_volume = flexible_volume
         self.simulation_mode = False
 
-        events.subscribe(API.ACCOUNT_BALANCE_UPDATE_EVENT_ID, self.account_balance_update_listener)
-
+    
     def get_real_fill_price_buy(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None):
         ''' Calculate the real fill price to purchase/sell a currency with the amount of funds available'''
         convergence_tol = .001 # The test_volume has to be within .5% of the real_volume
@@ -137,13 +48,12 @@ class TradeExecution:
             i += 1
             if i > len(book_sizes):
                 raise OrderVolumeDepthError(coin_name, self.DataManager)
-
+        print(f"Estimated fill in orderbook level {i+1}")
         # determine the average fill price
         remaining_volume = (test_volume - sum(book_sizes[:i]))
         fill_price = (sum([price*vol for price,vol in zip(book_prices[:i], book_sizes[:i])]) + remaining_volume*book_prices[i]) / (test_volume)
         
         real_volume = owned_amount / fill_price
-        
         # Check that the real volume can be covered by the same depth as the test volume
         if abs((real_volume - test_volume)/test_volume) < convergence_tol:
             return fill_price
@@ -174,7 +84,7 @@ class TradeExecution:
             i += 1
             if i > len(book_sizes):
                 raise OrderVolumeDepthError(coin_name, self.DataManager)
-
+        print(f"Estimated fill in orderbook level {i+1}")
         # determine the average fill price
         remaining_volume = (test_volume - sum(book_sizes[:i]))
         fill_price = (sum([price*vol for price,vol in zip(book_prices[:i], book_sizes[:i])]) + remaining_volume*book_prices[i]) / (test_volume)
@@ -191,11 +101,12 @@ class TradeExecution:
         ''' Check is the sequence matches the expected profit to within a specified tolerance
             If a volume is specified, it will return the average fill price
         '''
-        fee = self.DataManager.base_fee
+        
         total = 1
         exp_fills = []
 
         for type, pair in sequence:
+            fee = self.DataManager.Pairs[pair].fee
             tx = 1 - fee
             if type == "buy":
                 book_prices, book_sizes = list(zip(*self.DataManager.Pairs[pair].orderbook['asks']))
@@ -244,7 +155,7 @@ class TradeExecution:
                 self.DataManager.Pairs[pair].orderbook = orderbook[pair]
                 self.DataManager.Pairs[pair].last_updated = time.time()
 
-    def execute_sequence(self, sequence, Session: Session):
+    def execute_sequence(self, sequence, Session):
         self.cur_waiting_on = None
 
         # Get the expected owned currency and confirm we have that currency available in our session
@@ -280,50 +191,42 @@ class TradeExecution:
 
         # Execute trades
         print("========= Executing Sequence =========")
-        reported_balance = None
-        cur_amount = trade_volume
-        starting_trade_bal = cur_amount
+        print(f"Expecting {profit} yield. Starting with: {trade_volume}")
+        starting_trade_bal = trade_volume
+        cur_amount = str(trade_volume)
+    
         for i, trade in enumerate(sequence):
             type, pair = trade
-            self.log_trade(pair, type, exp_fills[i], cur_amount)
-            
-            size_precision = self.DataManager.Pairs[pair].baseIncrement
-            cur_amount = float(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
 
-            print(f"{trade} with {cur_amount} units")
             if type == "buy":
+                size_precision = self.DataManager.Pairs[pair].qouteIncrement
+                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
 
-                print(cur_amount)
-                self.cur_waiting_on = pair[0]
-                cur_amount = Session.buy_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
-                
-                # For buying, impact orderbook with new current amount once it's in the base currency
                 if self.simulation_mode:
+                    # For buying, impact orderbook with new current amount once it's in the base currency
+                    cur_amount = Session.buy_market(pair, cur_amount, exp_fills[i], self.DataManager.Pairs[pair].fee)
                     self.simulate_orderbook_impact(pair, cur_amount, type)
+                else:
+                    cur_amount = float(Decimal(cur_amount).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
+                    cur_amount *= (1 - self.DataManager.Pairs[pair].fee)
+                    cur_amount = str(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
+                    cur_amount = Session.buy_market(pair, cur_amount)
+                
             if type == "sell":
-                # For selling, impact the orderbook with the current amount while its still in the base currency
+                size_precision = self.DataManager.Pairs[pair].baseIncrement
+                cur_amount = str(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
+                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
+
                 if self.simulation_mode:
+                    #  For selling, impact the orderbook with the current amount while its still in the base currency
                     self.simulate_orderbook_impact(pair, cur_amount, type)
-
-                self.cur_waiting_on = pair[1]
-                cur_amount = Session.sell_market(pair, cur_amount, exp_fills[i], self.DataManager.base_fee)
+                    cur_amount = Session.sell_market(pair, cur_amount, exp_fills[i], self.DataManager.Pairs[pair].fee)
+                else:
+                    cur_amount = Session.sell_market(pair, cur_amount)
                 
-
-            # Wait for order to close
-            i = 0
-            while True:
-                if i % 100000 == 0:
-                    print(self.last_balance_change)
                 
-                if self.last_balance_change[0] == self.cur_waiting_on and self.DataManager.Orders[pair]['status'] == 'done':
-                    cur_amount = self.last_balance_change[1]
-                    print(self.last_balance_change)
-                    self.last_balance_change = (None, None)
-                    break
-                i += 1
-
         Session.update_PL() 
-        ending_trade_bal = cur_amount
+        ending_trade_bal = float(cur_amount)
 
         # Verify result
         actual_profit = (ending_trade_bal - starting_trade_bal) / starting_trade_bal
@@ -332,12 +235,8 @@ class TradeExecution:
         #    raise Exception("Profits do not match from what was calulcated in Session and get_real_sequence_profit()")
         
         print(f"Yield: {round(actual_profit, 5)}")
-        return profit
+        return actual_profit
 
-    def account_balance_update_listener(self, message):
-        if message['currency'] == self.cur_waiting_on:
-            self.last_balance_change = (message['currency'], float(message['available']))
-    
     def log_trade(self, pair, type, price, amount):
         # Save to log file
 

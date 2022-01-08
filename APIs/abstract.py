@@ -20,10 +20,6 @@ class ExchangeAPI(ABC):
         pass
 
     @abstractmethod
-    def remove_price_stream(self, pair:Tuple[str]) -> None:
-        pass
-
-    @abstractmethod
     def subscribe_all(self, limit:int=None, pairs: List[str]=None) -> None:
         pass
 
