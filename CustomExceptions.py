@@ -5,6 +5,10 @@ class TooManyRequests(Exception):
     ''' Raised when the API is request to rapidly'''
     pass
 
+class SocketDisconnect(Exception):
+    ''' Occurs when the websocket connection dies'''
+    pass
+
 class OrderVolumeDepthError(Exception):
     ''' Occurs when the book depth is not enough to cover the desired volume'''
     def __init__(self, coin_name, ExchangeData):
