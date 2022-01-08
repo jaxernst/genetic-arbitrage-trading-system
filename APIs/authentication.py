@@ -21,7 +21,7 @@ class KucoinAuthenticator:
 
     def unlock(self):
         if not self.PASSPHRASE:
-            self.PASSPHRASE = input("Enter your Kucoin API Passphrase")
+            self.PASSPHRASE = input("Enter your Kucoin API Passphrase: ")
         self.unlocked = True
     
     def request(self, endpoint, type, data=None):
