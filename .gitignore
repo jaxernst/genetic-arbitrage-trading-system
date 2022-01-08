@@ -144,3 +144,4 @@ __pycache__/Config.cpython-39.pyc
 APIs/__pycache__/KucoinAPI.cpython-39.pyc
 .gitignore
 dev.ipynb
+research.ipynb
