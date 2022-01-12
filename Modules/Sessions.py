@@ -50,19 +50,19 @@ class SessionLive:
         new_amount = self.wait_to_receive(base, pair)        
 
         # Update Account/Session's balance of the qoute currency (cost)
-        self.Account.balance[qoute] -= float(amount)
-        self.balance[qoute] -= float(amount)
+        self.Account.balance[qoute] -= amount
+        self.balance[qoute] -= amount
 
         if base in self.balance:
-            self.balance[base] += float(new_amount)
+            self.balance[base] += new_amount
         else:
-            self.balance[base] = float(new_amount)
+            self.balance[base] = new_amount
         
         # Update Account's balance of the base currency (buying)
         if base in self.Account.balance:
-            self.Account.balance[base] += float(new_amount)
+            self.Account.balance[base] += new_amount
         else:
-            self.Account.balance[base] = float(new_amount)
+            self.Account.balance[base] = new_amount
 
         return new_amount
 
@@ -83,19 +83,19 @@ class SessionLive:
         new_amount = self.wait_to_receive(qoute, pair)        
 
         # Update Account/Session's balance of the qoute currency (cost)
-        self.Account.balance[base] -= float(amount)
-        self.balance[base] -= float(amount)
+        self.Account.balance[base] -= amount
+        self.balance[base] -= amount
 
         if qoute in self.balance:
-            self.balance[qoute] += float(new_amount)
+            self.balance[qoute] += new_amount
         else:
-            self.balance[qoute] = float(new_amount)
+            self.balance[qoute] = new_amount
         
         # Update Account's balance of the qoute currency (buying)
         if qoute in self.Account.balance:
-            self.Account.balance[qoute] += float(new_amount)
+            self.Account.balance[qoute] += new_amount
         else:
-            self.Account.balance[qoute] = float(new_amount)
+            self.Account.balance[qoute] = new_amount
 
         return new_amount
 
