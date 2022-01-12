@@ -6,6 +6,7 @@ Kucoin_API_Key.json
 test_auth.py
 
 # Byte-compiled / optimized / DLL files
+obj/
 **/__pycache__/
 Modules/__pycache__/
 APIs/__pycache__
