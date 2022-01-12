@@ -24,7 +24,7 @@ class KucoinAuthenticator:
             self.PASSPHRASE = input("Enter your Kucoin API Passphrase: ")
         self.unlocked = True
     
-    def request(self, endpoint, type, data=None):
+    def request(self, endpoint, type="GET", data=None):
         URL = self.SERVER + endpoint
         now = int(time.time() * 1000)
         
