@@ -23,6 +23,8 @@ class KucoinAPI(ExchangeAPI):
     PAIR_UPDATE_EVENT_ID = "KucoinPairUpdate"
     ORDER_UPDATE_EVENT_ID = "OrderStatusUpdate"
     ACCOUNT_BALANCE_UPDATE_EVENT_ID = "AccountBalanceUpdate"
+    LEVEL2_UPDATE_EVENT_ID = "Level2Update"
+    DISCONNECT_EVENT_ID = "SocketDisconnected"
 
     SERVER = "https://api.kucoin.com"
     TICKER_ENDPOINT = "/api/v1/market/orderbook/level1"
@@ -44,6 +46,7 @@ class KucoinAPI(ExchangeAPI):
         self.streaming = self.socket.connected
         self.showDataStream = False
         
+        self.request_freq = 5
         self.ping_interval_scale = 1
         self.last_pong_time = 0
         self.payloads = [] # Stores subscription functions with arguements so they can be recalled when reconnect occurs
@@ -80,8 +83,10 @@ class KucoinAPI(ExchangeAPI):
                 if self.last_pong_time < send_time:
                     # No pong received since last sent
                     print("Pong not received...")
+                    continue
                     if self.socket.attempt_reconnect():
                         # If reconnect succesful, resubscribe
+                        events.post_event(self.DISCONNECT_EVENT_ID)
                         self.reset_subscriptions()
 
         self.ping_thread = Thread(target=send_ping)
@@ -110,12 +115,13 @@ class KucoinAPI(ExchangeAPI):
         
         return pairs
     
-    def get_pair_info(self, pairs=None):
+    def get_pair_info(self, pairs=None, limit=None):
         r1 = requests.get(f"{self.SERVER}{self.SYMBOLS_ENDPOINT}").json()
         r2 = self.Auth.request(f"{self.TRADE_FEE_ENDPOINT}", "GET").json()
         pair_info = {}
         results = r1['data']
         fees = r2['data']
+
         for pair_data in results:
             base, qoute = pair_data["symbol"].split("-") 
             skip = Config.skipCurrencies + load_obj("banned_coins")
@@ -123,16 +129,48 @@ class KucoinAPI(ExchangeAPI):
             for fee_dict in fees:
                 if fee_dict['symbol'] == pair_data['symbol']:
                     pair_data['fee'] = fee_dict['taker']
-
-            if pairs and (base,qoute) in pairs:
-                pair_info[(base,qoute)] = pair_data
-                continue
+            
+            if pairs:
+                if (base,qoute) in pairs:
+                    pair_info[(base, qoute)] = pair_data
+                    continue
             if base not in skip and qoute not in skip:
                 pair_info[(base, qoute)] = pair_data
-        
-        return pair_info
 
+            if limit and len(list(pair_info.keys())) >= limit:
+                break
+
+        return pair_info
     
+    def get_pair_fees(self, pairs):
+        def divide_chunks(l, n):
+            # looping till length l
+            for i in range(0, len(l), n): 
+                yield l[i:i + n]
+
+        urls = []
+        for pairs in divide_chunks(pairs, 10):
+            joined = ','.join([f"{base}-{qoute}" for base, qoute in pairs])
+            urls.append(f"{self.TRADE_FEE_ENDPOINT}s?symbols={joined}")
+    
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            response_list = list(pool.map(self.Auth.request, urls))
+
+        out = {}
+        for i, response in enumerate(response_list):
+            data = response.json()
+            if 'data' in data:
+                for fee_data in data['data']:
+                    base, qoute = fee_data['symbol'].split("-")
+                    out[(base, qoute)] = fee_data['takerFeeRate']
+                
+            elif data['code'] == '429000':
+                raise TooManyRequests
+            else:
+                raise Exception(f"Unexpected response from API: {data}")
+        return out
+
     def get_pair_spread(self, pair: Tuple[str]) -> Tuple[float]:        
         
         r = requests.get(f"{self.SERVER}{self.TICKER_ENDPOINT}?symbol={pair[0]}-{pair[1]}").json()
@@ -164,21 +202,39 @@ class KucoinAPI(ExchangeAPI):
     
     def get_multiple_orderbooks(self, pairs: List[tuple]):
         ''' pairs : ('ETH', 'BTC') '''
-        urls = [f"{self.SERVER}{self.ORDERBOOK_ENDPOINT}?symbol={pair[0]}-{pair[1]}" for pair in pairs] 
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            response_list = list(pool.map(requests.get, urls))
         
+        def divide_chunks(l, n):
+                # looping till length l
+                for i in range(0, len(l), n): 
+                    yield l[i:i + n]
+
         out = {}
-        for i, response in enumerate(response_list):
-            data = response.json()
-            if 'data' in data:
-                out[pairs[i]] = {}
-                out[pairs[i]]['bids'] = [[float(x) for x in sublist] for sublist in data['data']['bids']]
-                out[pairs[i]]['asks'] = [[float(x) for x in sublist] for sublist in data['data']['asks']]
-            elif data['code'] == '429000':
-                raise TooManyRequests
-            else:
-                raise Exception (f"Unexpected response from API: {data}")
+        num_reqs = 0
+        t_last_request = None
+        for chunk in divide_chunks(pairs, 20):
+            if t_last_request:
+                
+                while (time() - t_last_request) < 1/self.request_freq:
+                    sleep(.05)
+            
+            urls = [f"{self.SERVER}{self.ORDERBOOK_ENDPOINT}?symbol={pair[0]}-{pair[1]}" for pair in chunk] 
+            with ThreadPoolExecutor(max_workers=40) as pool:
+                response_list = list(pool.map(requests.get, urls))
+            t_last_request = time()
+
+            for i, response in enumerate(response_list):
+                data = response.json()
+                if 'data' in data:
+                    out[chunk[i]] = data['data']
+                elif data['code'] == '429000':
+                        print(data)
+                        raise TooManyRequests
+                else:
+                    raise Exception (f"Unexpected response from API: {data}")
+            
+                num_reqs += 1
+                print(num_reqs)
+
         return out
     
     def add_price_stream(self, pair:Tuple[str]) -> None:
@@ -201,28 +257,51 @@ class KucoinAPI(ExchangeAPI):
             self.socket.send(json.dumps(payload)) 
             sleep(.1)  
 
-    def subscribe_all(self, limit:int=300, pairs: List[str]=None) -> None:
+    def subscribe_all(self, pairs: List[tuple]=None, limit:int=300) -> None:
+        ''' Subscribe too pair price and orderbook stream'''
+        if pairs:
+            if limit:
+                pairs = pairs[:limit]
+            
+            def divide_chunks(l, n):
+                # looping till length l
+                for i in range(0, len(l), n): 
+                    yield l[i:i + n]
 
-        if not pairs:
-            pairs = self.get_tradeable_pairs(tuple_separate=False)
+            for pairs in divide_chunks(pairs, 100):
+                tickers = ','.join([f"{base}-{qoute}" for base,qoute in pairs])
+                payload = { 'id': self.connectID,
+                            "type": "subscribe",
+                            "topic": f"/market/ticker:{tickers}",
+                            "subscription": {"name": "ticker"}}
+                self.payloads.append(payload)
+                self.socket.send(json.dumps(payload)) 
+            return     
         
+        payload = { 'id': self.connectID,
+                    "type": "subscribe",
+                    "topic": f"/market/ticker:all",
+                    "response":"true"}
+        self.payloads.append(payload)
+        self.socket.send(json.dumps(payload))
+
+    def subscribe_level2(self, pairs: List[tuple], limit:int=300):
+        def divide_chunks(l, n):
+                # looping till length l
+                for i in range(0, len(l), n): 
+                    yield l[i:i + n]
+
         if limit:
             pairs = pairs[:limit]
-        
-        def divide_chunks(l, n):
-            # looping till length l
-            for i in range(0, len(l), n): 
-                yield l[i:i + n]
 
-        for pairs in divide_chunks(pairs, 100):
-            tickers = ','.join([f"{pair}" for pair in pairs])
+        for chunk in divide_chunks(pairs, 100):
+            symbols = ','.join([f"{base}-{qoute}" for base, qoute in chunk])
             payload = { 'id': self.connectID,
                         "type": "subscribe",
-                        "topic": f"/market/ticker:{tickers}",
-                        "subscription": {"name": "ticker"}}
-            self.payloads.append(payload)
-            self.socket.send(json.dumps(payload))      
-    
+                        "topic": f"/market/level2:{symbols}"}
+            self.socket.send(json.dumps(payload))
+        return
+        
     def subscribe_order_status(self):
         payload = { 'id': self.connectID,
                     "type": "subscribe",
@@ -245,11 +324,10 @@ class KucoinAPI(ExchangeAPI):
             
             - The payload will follow the kraken format, so for this class, the payload can be sent on as is
         '''
-
         # Ignoring hearbeat messages for now
         if self.showDataStream:
             print(message)
-
+        
         message = json.loads(message)
 
         if message['type'] == "pong":
@@ -259,9 +337,13 @@ class KucoinAPI(ExchangeAPI):
         if message['type'] != "message":
             print(message)
             return
-
+        
         if "/market/ticker" in message['topic']:
-            ticker = re.search(r"ticker:(\w+-\w+)", message['topic']).group(1)
+            if message['subject'] == "trade.ticker":
+                ticker = re.search(r"ticker:(\w+-\w+)", message['topic']).group(1)
+            else:
+                ticker = message['subject']
+
             base, qoute = ticker.split("-")
 
             data = {}
@@ -271,10 +353,13 @@ class KucoinAPI(ExchangeAPI):
             events.post_event(self.PAIR_UPDATE_EVENT_ID, ((base,qoute),data))
             return
         
+        if "/market/level2" in message['topic']:
+            events.post_event(self.LEVEL2_UPDATE_EVENT_ID, message['data'])
         if "/spotMarket/tradeOrders" in message['topic']:
             events.post_event(self.ORDER_UPDATE_EVENT_ID, message['data'])
         if "/account/balance" in message['topic']:
             events.post_event(self.ACCOUNT_BALANCE_UPDATE_EVENT_ID, message['data'])
+
 
     def market_order(self, pair, side, amount):
         oID = str(uuid4()).replace('-', '')
