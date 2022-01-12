@@ -6,8 +6,11 @@ def subscribe(event_type: str, fn):
     else:
         subscribers[event_type].append(fn)
 
-def post_event(event_type: str, data):
+def post_event(event_type: str, data=None):
     if not event_type in subscribers:
         return
     for fn in subscribers[event_type]:
-        fn(data)
+        if data: 
+            fn(data)
+        else:
+            fn()
