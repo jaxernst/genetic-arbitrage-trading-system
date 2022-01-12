@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_DOWN
 from APIs.abstract import ExchangeAPI
 from Modules import DataManagement, ExchangeData, Pair
 from Modules.Portfolio import Portfolio
+from Modules.Sessions import SessionLive, SessionSim
 from util.obj_funcs import save_obj, load_obj
 from CustomExceptions import OrderVolumeDepthError, TooManyRequests
 from util import events        
@@ -13,21 +14,20 @@ from util import events
 class TradeExecution:
     # Interfaces with the API to execute trades
     # Determines how much sequence volume can be traded based on order book
-    def __init__(self, API:ExchangeAPI, DataManager:ExchangeData, flexible_volume=False):
+    def __init__(self, API:ExchangeAPI, DataManager:ExchangeData, flexible_volume=False, simulation_mode=True):
         self.API =  API
         self.API.subscribe_order_status()
         self.API.subscribe_account_balance_notice()
         self.last_call = None # Data from the last API call]
         self.DataManager = DataManager
-        self.profit_tolerance = .002
+        self.profit_tolerance = .0005
         self.recently_traded = []
         self.last_balance_change = (None,None)
 
         # Options
         self.flexible_volume = flexible_volume
-        self.simulation_mode = False
+        self.simulation_mode = simulation_mode
 
-    
     def get_real_fill_price_buy(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None):
         ''' Calculate the real fill price to purchase/sell a currency with the amount of funds available'''
         convergence_tol = .001 # The test_volume has to be within .5% of the real_volume
@@ -109,7 +109,7 @@ class TradeExecution:
             fee = self.DataManager.Pairs[pair].fee
             tx = 1 - fee
             if type == "buy":
-                book_prices, book_sizes = list(zip(*self.DataManager.Pairs[pair].orderbook['asks']))
+                book_prices, book_sizes = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('asks')))
                 fill_price = self.get_real_fill_price_buy(type, owned_amount, book_prices, book_sizes, pair[0])
 
                 exp_fills.append(fill_price)
@@ -118,7 +118,7 @@ class TradeExecution:
                 
             elif type == "sell":
                 # Treat this as a buy, 
-                book_prices, book_sizes = list(zip(*self.DataManager.Pairs[pair].orderbook['bids']))
+                book_prices, book_sizes = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('bids')))
                 fill_price = self.get_real_fill_price_sell(type, owned_amount, book_prices, book_sizes, pair[0])
                 
                 exp_fills.append(fill_price)
@@ -157,6 +157,12 @@ class TradeExecution:
 
     def execute_sequence(self, sequence, Session):
         self.cur_waiting_on = None
+        
+        if isinstance(Session, SessionLive) and self.simulation_mode:
+            raise Exception("Cannot trade with a live session in simulation mode")
+        if isinstance(Session, SessionSim) and not self.simulation_mode:
+            raise Exception("Cannot trade a simulated session in live mode")
+
 
         # Get the expected owned currency and confirm we have that currency available in our session
         type, pair = sequence[0]
@@ -172,7 +178,7 @@ class TradeExecution:
             raise Exception("The activate trading Session does not own any of the required currency to trade the squence")
 
         # Get expected profit and fill price
-        self.update_sequence_orderbook(sequence)
+        #self.update_sequence_orderbook(sequence)
         profit, exp_fills = self.get_real_sequence_profit(sequence, max_tradeable_volume)
         
         # Check profits with lower trade volumes if profit isn't above the threshold
@@ -193,7 +199,7 @@ class TradeExecution:
         print("========= Executing Sequence =========")
         print(f"Expecting {profit} yield. Starting with: {trade_volume}")
         starting_trade_bal = trade_volume
-        cur_amount = str(trade_volume)
+        cur_amount = trade_volume
     
         for i, trade in enumerate(sequence):
             type, pair = trade
@@ -202,38 +208,36 @@ class TradeExecution:
                 size_precision = self.DataManager.Pairs[pair].qouteIncrement
                 print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
 
+                cur_amount = float(Decimal(cur_amount).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
+                
                 if self.simulation_mode:
                     # For buying, impact orderbook with new current amount once it's in the base currency
                     cur_amount = Session.buy_market(pair, cur_amount, exp_fills[i], self.DataManager.Pairs[pair].fee)
-                    self.simulate_orderbook_impact(pair, cur_amount, type)
+                    #self.simulate_orderbook_impact(pair, cur_amount, type)
                 else:
-                    cur_amount = float(Decimal(cur_amount).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
                     cur_amount *= (1 - self.DataManager.Pairs[pair].fee)
-                    cur_amount = str(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
+                    cur_amount = float(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
                     cur_amount = Session.buy_market(pair, cur_amount)
                 
             if type == "sell":
                 size_precision = self.DataManager.Pairs[pair].baseIncrement
-                cur_amount = str(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
+                cur_amount = float(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
                 print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
 
                 if self.simulation_mode:
                     #  For selling, impact the orderbook with the current amount while its still in the base currency
-                    self.simulate_orderbook_impact(pair, cur_amount, type)
+                    #self.simulate_orderbook_impact(pair, cur_amount, type)
                     cur_amount = Session.sell_market(pair, cur_amount, exp_fills[i], self.DataManager.Pairs[pair].fee)
                 else:
                     cur_amount = Session.sell_market(pair, cur_amount)
                 
-                
-        Session.update_PL() 
-        ending_trade_bal = float(cur_amount)
-
-        # Verify result
-        actual_profit = (ending_trade_bal - starting_trade_bal) / starting_trade_bal
-        ##if round(actual_profit, 10) != round(profit, 10):
-        #    print(f"Actual profit: {actual_profit}, exp_profit: {profit}  ---- % Discrepency: {100*abs(profit - actual_profit)/actual_profit}")
-        #    raise Exception("Profits do not match from what was calulcated in Session and get_real_sequence_profit()")
+        Session.update_PL()
+        ending_trade_bal = cur_amount
         
+        if not self.simulation_mode:    
+            self.DataManager.save_orders()
+
+        actual_profit = (ending_trade_bal - starting_trade_bal) / starting_trade_bal        
         print(f"Yield: {round(actual_profit, 5)}")
         return actual_profit
 
