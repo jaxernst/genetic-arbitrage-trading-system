@@ -19,3 +19,12 @@ def load_json(filename):
     with open(filename) as f:
         dict_ = json.load(f)
     return dict_
+
+def save_json(data, name):
+    if isinstance(data, dict):
+        str_keys = {str(key):data for key,data in data.items()}
+    if isinstance(data, list):
+        str_keys = {f"{i}":{str(key):item for key,item in d.items()} for i, d in enumerate(data)}
+    with open('obj/'+ name + '.json', 'w') as f:
+        json.dump(str_keys, f)
+
