@@ -64,9 +64,6 @@ class GeneticArbitrage:
             else:
                 return self.generate_sequence(pairList, vector_length, starting_cur, ending_cur)
         
-        for pair in sequence:
-            if not self.DataManager.Pairs[pair[1]].spread_populated():
-                raise Exception()
         return sequence
 
     def get_sequence_profit(self, sequence):
@@ -75,12 +72,14 @@ class GeneticArbitrage:
             type, pair = tuple
             fee = self.DataManager.Pairs[pair].fee
             tx = 1 - fee
-            if type == "buy":
-                ask = float(self.DataManager.Pairs[pair].ask)
-                total *= (1/ask)*tx
+            if type == "buy": 
+                book_prices, _ = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('asks')))
+                best_ask = book_prices[0]
+                total *= (1/best_ask)*tx
             elif type == "sell":
-                bid = float(self.DataManager.Pairs[pair].bid)
-                total *= (bid)*tx
+                book_prices, _ = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('bids')))
+                best_bid = book_prices[0]
+                total *= (best_bid)*tx
             else:
                 raise Exception("poopoo")
         if total > 1.5:
@@ -95,12 +94,12 @@ class GeneticArbitrage:
         
         # Return pairs from pairlist if spread is not populated
         try:
-            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].spread_populated()]
+            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].fee_spread_populated()]
         except KeyError:
-            # Please please change this later
+            # Change this later
             last_banned = load_obj("banned_coins")[-1]
             self.pairList = tuple([pair for pair in self.pairList if last_banned not in pair])
-            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].spread_populated()]
+            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].fee_spread_populated()]
         
         if not pairList:
             return []
@@ -117,7 +116,7 @@ class GeneticArbitrage:
         if len(cleaned_pairs) < 100:
             return (None, None)
         
-        lengths = (3, 4)
+        lengths = (3, 4, 5)
         population = [self.generate_sequence(cleaned_pairs, random.choice(lengths), self.base_cur, self.base_cur) for _ in range(self.set_size)]
 
         while len(population) > 2:
