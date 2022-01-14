@@ -91,7 +91,6 @@ class GeneticArbitrage:
         pass
 
     def cleanup_pairList(self):
-        
         # Return pairs from pairlist if spread is not populated
         try:
             pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].fee_spread_populated()]
@@ -108,14 +107,14 @@ class GeneticArbitrage:
         return out_list
 
     def do_evolution(self) -> Tuple[float, Tuple[str]]:
-        # This should happen on a new thread
-        # Get first generation of sequences
+        
         mutation_rate = .05 
         
         cleaned_pairs = self.cleanup_pairList() # Removes pairList pairs if there is only one qoute currency
         if len(cleaned_pairs) < 100:
             return (None, None)
         
+        # Get first generation of sequences
         lengths = (3, 4, 5)
         population = [self.generate_sequence(cleaned_pairs, random.choice(lengths), self.base_cur, self.base_cur) for _ in range(self.set_size)]
 
