@@ -5,14 +5,15 @@ from APIs.abstract import ExchangeAPI
 from util.currency_filters import remove_single_swapabble_coins
 from util import events
 from util.obj_funcs import save_json
+import logging
 import bisect
 import time
 
 @dataclass
 class Orderbook:
     last_sequence: int = None
-    bids: list = None
-    asks: list = None
+    bids: dict = None
+    asks: dict = None
     missing_sequences:list=None
 
     def update(self, type, price, size, sequence:int):
@@ -22,6 +23,11 @@ class Orderbook:
             self.missing_sequences.append(sequence)     
         self.last_sequence = sequence
         
+        if not self.bids:
+            self.bids = {}
+        if not self.asks:
+            self.asks - {}
+
         if price == "0":
             return
         if type == "bids":
@@ -32,7 +38,7 @@ class Orderbook:
             self.asks[price] = size
             if size == "0": 
                 self.asks.pop(price)
-        
+                 
     def get_book(self, type):
         out = []
         if type == 'bids':
@@ -40,7 +46,7 @@ class Orderbook:
         elif type == 'asks':
             book_sorted = sorted(self.asks.items())
         else:
-            raise Exception("Invalid type)")
+            raise Exception("Invalid type")
 
         for price, size in book_sorted:
             out.append([float(price), float(size)])
@@ -57,6 +63,7 @@ class Pair:
     lastUpdated: float = time.time()
     baseIncrement: float = None
     qouteIncrement: float = None
+    priceIncrement: float = None
     fee: float = None
     exchange = None
 
@@ -69,8 +76,10 @@ class Pair:
 
    
 class ExchangeData:
+
     PAIR_UPDATE_EVENT_ID = "ExchangeDataPairUpdate"
-    
+    ORDER_DONE_EVENT_ID = "OrderDoneEvent"
+
     def __init__(self, API: ExchangeAPI):
         self.API = API
         self.Pairs = {} # List of 
@@ -82,7 +91,9 @@ class ExchangeData:
         self.missing_fees  = []
         self.level2_calibrated = False
         self.orderbook_updates = 0
+        self.orders = []
 
+        logging.basicConfig(filename='util/orders.log', encoding='utf-8', level=logging.DEBUG)
         events.subscribe(API.PAIR_UPDATE_EVENT_ID, self.pair_update_listener)
         events.subscribe(API.ORDER_UPDATE_EVENT_ID, self.order_update_listener)
         events.subscribe(API.ACCOUNT_BALANCE_UPDATE_EVENT_ID, self.account_balance_update_listener)
@@ -137,11 +148,9 @@ class ExchangeData:
             for type, change in message['changes'].items():
                 if change:
                     price, size, sequence = change[0]
-        
                     self.Pairs[(base,qoute)].orderbook.update(type, price, size, int(sequence))
                     self.orderbook_updates += 1
             a = 1
-
     
     def pair_update_listener(self, message: Tuple[tuple,Dict[str,str]]) -> None:
         '''
@@ -170,13 +179,18 @@ class ExchangeData:
             self.show_coins()
 
     def order_update_listener(self, message):
-        base, qoute = message['symbol'].split("-")
-        
-        if (base, qoute) not in self.Orders:
-            self.Orders[(base,qoute)] = {}
+        oID = message['orderId']
+        self.Orders[oID] = []
+        self.Orders[oID].append(message)
+        side = message['side']
+        status = message['status']
 
-        self.Orders[(base,qoute)] = message
-        
+        if status == "done":
+            fill_size = message['filledSize']
+            events.post_event(self.ORDER_DONE_EVENT_ID, fill_size)
+
+            #self.Orders.pop((side,(base,qoute)))
+    
         #self.Orders[(base,qoute)]['type'] = message['type']
         #self.Orders[(base,qoute)]['status'] = message['status']
         #self.Orders[(base,qoute)]['filledSize'] = message['filledSize']
@@ -204,12 +218,14 @@ class ExchangeData:
                                                     orderbook=Orderbook(),
                                                     baseIncrement=pair_data['baseIncrement'],
                                                     qouteIncrement=pair_data['qouteIncrement'],
+                                                    priceIncrement=pair_data['priceIncrement'],
                                                     fee=float(pair_data['fee']))
                 else:
                     self.Pairs[(base, qoute)] = Pair(base=base, qoute=qoute, 
                                                     orderbook=Orderbook(),
                                                     baseIncrement=pair_data['baseIncrement'], 
                                                     qouteIncrement=pair_data['quoteIncrement'],
+                                                    priceIncrement=pair_data['priceIncrement'],
                                                     fee=float(pair_data['fee']))
     
     def update_missing_fee_pairs(self):

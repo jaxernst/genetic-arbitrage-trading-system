@@ -20,7 +20,7 @@ class TradeExecution:
         self.API.subscribe_account_balance_notice()
         self.last_call = None # Data from the last API call]
         self.DataManager = DataManager
-        self.profit_tolerance = .0005
+        self.profit_tolerance = .0015
         self.recently_traded = []
         self.last_balance_change = (None,None)
 
@@ -203,33 +203,34 @@ class TradeExecution:
     
         for i, trade in enumerate(sequence):
             type, pair = trade
+            price_precision = self.DataManager.Pairs[pair].priceIncrement
+            limit_price =  float(Decimal(exp_fills[i]).quantize(Decimal(price_precision), rounding=ROUND_DOWN))
 
             if type == "buy":
                 size_precision = self.DataManager.Pairs[pair].qouteIncrement
-                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
-
+                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}, (qouteIncrement={size_precision})")
                 cur_amount = float(Decimal(cur_amount).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
                 
                 if self.simulation_mode:
                     # For buying, impact orderbook with new current amount once it's in the base currency
-                    cur_amount = Session.buy_market(pair, cur_amount, exp_fills[i], self.DataManager.Pairs[pair].fee)
-                    #self.simulate_orderbook_impact(pair, cur_amount, type)
+                    cur_amount = Session.buy_market(pair, cur_amount, limit_price, self.DataManager.Pairs[pair].fee)
+                    self.simulate_orderbook_impact(pair, cur_amount, type)
                 else:
-                    cur_amount *= (1 - self.DataManager.Pairs[pair].fee)
-                    cur_amount = float(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
-                    cur_amount = Session.buy_market(pair, cur_amount)
+                    amount_to_buy = cur_amount*(1 - self.DataManager.Pairs[pair].fee)# / limit_price
+                    amount_to_buy = float(Decimal(str(amount_to_buy)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
+                    cur_amount = Session.buy_market(pair, amount_to_buy, limit_price)
                 
             if type == "sell":
                 size_precision = self.DataManager.Pairs[pair].baseIncrement
                 cur_amount = float(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
-                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
+                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}, (baseIncrement={size_precision})")
 
                 if self.simulation_mode:
                     #  For selling, impact the orderbook with the current amount while its still in the base currency
-                    #self.simulate_orderbook_impact(pair, cur_amount, type)
-                    cur_amount = Session.sell_market(pair, cur_amount, exp_fills[i], self.DataManager.Pairs[pair].fee)
+                    self.simulate_orderbook_impact(pair, cur_amount, type)
+                    cur_amount = Session.sell_market(pair, cur_amount, limit_price, self.DataManager.Pairs[pair].fee)
                 else:
-                    cur_amount = Session.sell_market(pair, cur_amount)
+                    cur_amount = Session.sell_market(pair, cur_amount, limit_price)
                 
         Session.update_PL()
         ending_trade_bal = cur_amount
@@ -239,6 +240,7 @@ class TradeExecution:
 
         actual_profit = (ending_trade_bal - starting_trade_bal) / starting_trade_bal        
         print(f"Yield: {round(actual_profit, 5)}")
+        #raise Exception("Worked")
         return actual_profit
 
     def log_trade(self, pair, type, price, amount):
@@ -252,10 +254,10 @@ class TradeExecution:
     def simulate_orderbook_impact(self, pair, amount, trade_type):
         ''' Update the orderbook to reflect the impact of a trade'''
         if trade_type == "buy":
-            orderbook = self.DataManager.Pairs[pair].orderbook['asks']    
+            orderbook = self.DataManager.Pairs[pair].orderbook.get_book('asks')    
         if trade_type == "sell":
-            orderbook = self.DataManager.Pairs[pair].orderbook['bids']
-        book_sizes = list(zip(*orderbook))[1]
+            orderbook = self.DataManager.Pairs[pair].orderbook.get_book('bids')
+        book_prices, book_sizes = list(zip(*orderbook))
         
         i = 0
         while book_sizes[i] <= amount:
@@ -268,17 +270,24 @@ class TradeExecution:
         print(f"Simulating orderbook impact at {i+1} level/s")
         
         # Subtract volume from the last level reached with the amount trade
-        orderbook[i][1] -= amount
-        
-        if orderbook[i][1] <= 0:
-            raise Exception
+        remaining = book_sizes[i] - amount
+        if trade_type == "buy":
+            if book_prices[i] in self.DataManager.Pairs[pair].orderbook.asks:
+                self.DataManager.Pairs[pair].orderbook.asks[book_prices[i]] = str(remaining)
+        elif trade_type == "sell":
+            if book_prices[i] in self.DataManager.Pairs[pair].orderbook.bids:
+                self.DataManager.Pairs[pair].orderbook.bids[book_prices[i]] = str(remaining)
+    
 
         # Remove price levels where volume is fully consumed (if first level isn't enough to cover)
-        orderbook = orderbook[i:]
-        
-        if trade_type == "buy":
-            self.DataManager.Pairs[pair].orderbook['asks'] = orderbook
-            self.DataManager.Pairs[pair].bid = orderbook[0][0]
-        if trade_type == "sell":
-            self.DataManager.Pairs[pair].orderbook['bids'] = orderbook
-            self.DataManager.Pairs[pair].ask = orderbook[0][0]   
+        for price in book_prices[:i]:
+            if trade_type == "buy":
+                if price in self.DataManager.Pairs[pair].orderbook.asks:
+                    del self.DataManager.Pairs[pair].orderbook.asks[price]
+                else:
+                    print("Expected orderbook price no longer present")
+            elif trade_type == "sell":
+                if price in self.DataManager.Pairs[pair].orderbook.bids:
+                    del self.DataManager.Pairs[pair].orderbook.bids[price]
+                else:
+                    print("Expected orderbook price no longer present")
