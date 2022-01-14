@@ -83,11 +83,10 @@ class KucoinAPI(ExchangeAPI):
                 if self.last_pong_time < send_time:
                     # No pong received since last sent
                     print("Pong not received...")
-                    continue
-                    if self.socket.attempt_reconnect():
-                        # If reconnect succesful, resubscribe
-                        events.post_event(self.DISCONNECT_EVENT_ID)
-                        self.reset_subscriptions()
+                    #if self.socket.attempt_reconnect():
+                    #    # If reconnect succesful, resubscribe
+                    #    events.post_event(self.DISCONNECT_EVENT_ID)
+                    #    self.reset_subscriptions()
 
         self.ping_thread = Thread(target=send_ping)
         self.ping_thread.daemon=True
@@ -130,11 +129,12 @@ class KucoinAPI(ExchangeAPI):
                 if fee_dict['symbol'] == pair_data['symbol']:
                     pair_data['fee'] = fee_dict['taker']
             
-            if pairs:
-                if (base,qoute) in pairs:
-                    pair_info[(base, qoute)] = pair_data
-                    continue
+            
             if base not in skip and qoute not in skip:
+                if pairs:
+                    if (base,qoute) in pairs:
+                        pair_info[(base, qoute)] = pair_data
+                        continue
                 pair_info[(base, qoute)] = pair_data
 
             if limit and len(list(pair_info.keys())) >= limit:
@@ -209,7 +209,7 @@ class KucoinAPI(ExchangeAPI):
                     yield l[i:i + n]
 
         out = {}
-        num_reqs = 0
+        num_reqs = 0 
         t_last_request = None
         for chunk in divide_chunks(pairs, 20):
             if t_last_request:
@@ -360,7 +360,6 @@ class KucoinAPI(ExchangeAPI):
         if "/account/balance" in message['topic']:
             events.post_event(self.ACCOUNT_BALANCE_UPDATE_EVENT_ID, message['data'])
 
-
     def market_order(self, pair, side, amount):
         oID = str(uuid4()).replace('-', '')
         pair = f"{pair[0]}-{pair[1]}"
@@ -373,7 +372,29 @@ class KucoinAPI(ExchangeAPI):
 
         r = self.Auth.request(self.ORDER_ENDPOINT, "POST", data=data).json()
         print(r)
-        return r
+
+        if 'data' in r:
+            return r['data']['orderId']
+
+    def limit_order(self, pair, side, amount, price, tif="FOK"):
+        oID = str(uuid4()).replace('-', '')
+        pair = f"{pair[0]}-{pair[1]}"
+        volume_type = {"buy":"funds", "sell":"size"}
+        print(amount)
+        
+        data = {"clientOid":oID,
+                "side":side.lower(),
+                "symbol":pair,
+                "size":amount,
+                "price":price,
+                "timeInForce":tif,
+                "type":"limit"}
+
+        r = self.Auth.request(self.ORDER_ENDPOINT, "POST", data=json.dumps(data)).json()
+        print(r)
+
+        if 'data' in r:
+            return r['data']['orderId']
 
     def get_portfolio(self, return_raw_balance=False) -> Portfolio:
         '''Request portfolio information for an authenticated account and return a portfolio object'''
