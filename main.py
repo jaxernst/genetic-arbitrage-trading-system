@@ -8,7 +8,7 @@ from util.SequenceTracker import SequenceTracker
 import logging
 import time
 
-SIMULATION_MODE = True
+SIMULATION_MODE = False
 
 
 # Init API and Data Manager
@@ -25,14 +25,14 @@ KucoinAPI.maintain_connection()
 
 # Setup account
 funding_cur = "USDT"
-starting_bal = 1000
+
 min_volume = 100
 Account = KucoinAPI.get_portfolio()
 
 if SIMULATION_MODE:
     Session = SessionSim(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, 5) # The session will update the parent account 
 else:
-    Session = SessionLive(Account, KucoinAPI, Account.balance[funding_cur], funding_cur, 5) # The session will update the parent account 
+    Session = SessionLive(Account, KucoinAPI, ExchangeData, Account.balance[funding_cur], funding_cur, 5) # The session will update the parent account 
    
 # Setup trade execution Modules
 Trader = TradeExecution(KucoinAPI, ExchangeData, simulation_mode=SIMULATION_MODE)
@@ -95,11 +95,12 @@ if __name__ == "__main__":
             if i % 50 == 0:
                 print("")
                 print(f"Session balance: {round(Session.balance['USDT'],3)}")
-                print(f"Account balance: {round(Account.balance['USDT'],3)}")
                 print(f"Percentage Gain: {round(100*Session.PL, 3)} %")
+                print(f"Account balance: {round(Account.balance['USDT'],3)}")
                 print(f"Number of trades: {Session.trades}")
                 print(f"Best GA profit: {round(100*max(GAprofits),5)} %")
                 print(f"Best Real profit: {round(100*max(RealProfits),5)} %")
+                print(f"\n Recent GA profits: {[round(profit,5) for profit in GAprofits[-7:]]}")
                 print(ExchangeData.orderbook_updates)
                 if sequence_lengths:
                     print(f"Average profitable sequence length: {sum(sequence_lengths) / len(sequence_lengths)}")
