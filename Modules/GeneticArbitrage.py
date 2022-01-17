@@ -7,8 +7,9 @@ from Modules.DataManagement import ExchangeData
 from Modules.TradeExecution import TradeExecution
 
 class GeneticArbitrage:
-    def __init__(self, sequence_length, set_size, DataManager:ExchangeData, base_cur="USDT"):
+    def __init__(self, sequence_length, set_size, DataManager:ExchangeData, Trader: TradeExecution, base_cur="USDT"):
         ''' pairs: ({<pair> (str): (bid, ask), ...}'''
+        self.Trader = Trader
         self.DataManager = DataManager
         self.Pairs = DataManager.Pairs # A list of available pairs to trade
         self.pairList = tuple(self.Pairs.keys())
@@ -109,18 +110,18 @@ class GeneticArbitrage:
     def do_evolution(self) -> Tuple[float, Tuple[str]]:
         
         mutation_rate = .05 
-        
+    
         cleaned_pairs = self.cleanup_pairList() # Removes pairList pairs if there is only one qoute currency
         if len(cleaned_pairs) < 100:
             return (None, None)
         
         # Get first generation of sequences
-        lengths = (3, 4, 5)
+        lengths = (3,3)
         population = [self.generate_sequence(cleaned_pairs, random.choice(lengths), self.base_cur, self.base_cur) for _ in range(self.set_size)]
 
         while len(population) > 2:
             # Evaluate sequences
-            profits = [self.get_sequence_profit(sequence) for sequence in population if sequence]
+            profits = [self.Trader.get_sequence_profit(sequence)[0] for sequence in population if sequence]
             
             # Take the best
             i = profits.index(max(profits))
@@ -157,11 +158,11 @@ class GeneticArbitrage:
             population.append(best)
             prev_population = population
         
-        final_profits = [self.get_sequence_profit(sequence) for sequence in population]
+        final_profits = [self.Trader.get_sequence_profit(sequence)[0] for sequence in population]
         profit_max = max(final_profits)
         i_max = final_profits.index(profit_max)
         sequence = population[final_profits.index(profit_max)]
-        return (profit_max-1, population[i_max])
+        return (profit_max, population[i_max])
 
     def recombine_sequences(self, sequences):
         duplicate_attempts = 0
@@ -239,9 +240,4 @@ class GeneticArbitrage:
                     return True
         return False
 
-
-if __name__ == "__main__":
-    Pairs = load_obj("pairs")
-    Broker = TradeExecution()
-    GA = GeneticArbitrage(Pairs, Broker)  
-    GA.do_evolution(4, 1000)    
+   
