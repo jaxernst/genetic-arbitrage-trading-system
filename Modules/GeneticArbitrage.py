@@ -67,57 +67,35 @@ class GeneticArbitrage:
         
         return sequence
 
-    def get_sequence_profit(self, sequence):
-        total = 1
-        for tuple in sequence:
-            type, pair = tuple
-            fee = self.DataManager.Pairs[pair].fee
-            tx = 1 - fee
-            if type == "buy": 
-                book_prices, _ = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('asks')))
-                best_ask = book_prices[0]
-                total *= (1/best_ask)*tx
-            elif type == "sell":
-                book_prices, _ = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('bids')))
-                best_bid = book_prices[0]
-                total *= (best_bid)*tx
-            else:
-                raise Exception("poopoo")
-        if total > 1.5:
-            raise Exception("Too good")
-        
-        return total / 1
-
     def choose_pregenerated_sequence(self):
         pass
 
     def cleanup_pairList(self):
         # Return pairs from pairlist if spread is not populated
-        try:
-            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].fee_spread_populated()]
-        except KeyError:
-            # Change this later
-            last_banned = load_obj("banned_coins")[-1]
-            self.pairList = tuple([pair for pair in self.pairList if last_banned not in pair])
-            pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].fee_spread_populated()]
+        pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].fee_spread_populated()]
+        
+        #except KeyError:
+        #    # Change this later
+        #    last_banned = load_obj("banned_coins")[-1]
+        #    self.pairList = tuple([pair for pair in self.pairList if last_banned not in pair])
+        #    pairList = [pair for pair in self.pairList if self.DataManager.Pairs[pair].fee_spread_populated()]
         
         if not pairList:
             return []
         
+        # Removes coins with only a single qoute currency
         out_list = remove_single_swapabble_coins(pairList)
         return out_list
 
     def do_evolution(self) -> Tuple[float, Tuple[str]]:
-        
-        mutation_rate = .05 
+        ''' Generates sequences, evaluates their performance, then kills off the poorest performers '''
     
         cleaned_pairs = self.cleanup_pairList() # Removes pairList pairs if there is only one qoute currency
         if len(cleaned_pairs) < 100:
             return (None, None)
         
         # Get first generation of sequences
-        lengths = (3,3)
-        population = [self.generate_sequence(cleaned_pairs, random.choice(lengths), self.base_cur, self.base_cur) for _ in range(self.set_size)]
+        population = [self.generate_sequence(cleaned_pairs, random.choice(self.sequence_lengths), self.base_cur, self.base_cur) for _ in range(self.set_size)]
 
         while len(population) > 2:
             # Evaluate sequences
@@ -139,7 +117,6 @@ class GeneticArbitrage:
                 break
 
             # Mutate
-            mutation_rate = self.mutation_rate
             for i, sequence in enumerate(population):
                 if random.random() < self.mutation_rate:
                     i_rand = random.randint(1,len(sequence)-2)
