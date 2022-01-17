@@ -1,41 +1,66 @@
 from dataclasses import dataclass
 from typing import Dict
 import time
-from decimal import Decimal, ROUND_DOWN
 
 from APIs.abstract import ExchangeAPI
 from Modules import DataManagement, ExchangeData, Pair
 from Modules.Portfolio import Portfolio
 from Modules.Sessions import SessionLive, SessionSim
+
 from util.obj_funcs import save_obj, load_obj
-from CustomExceptions import OrderVolumeDepthError, TooManyRequests
-from util import events        
+from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed, ConvergenceError
+from util.SequenceTracker import SequenceTracker
+from util.round_to_increment import  round_to_increment
+from util import events  
+
+import decimal
+
+# create a new context for this task
+ctx = decimal.Context()
+
+# 20 digits should be enough for everyone :D
+ctx.prec = 20
+
+def float_to_str(f):
+    """
+    Convert the given float to a string,
+
+    without resorting to scientific notation
+    """
+    d1 = ctx.create_decimal(repr(f))
+    return format(d1, 'f')
+
 
 class TradeExecution:
     # Interfaces with the API to execute trades
     # Determines how much sequence volume can be traded based on order book
-    def __init__(self, API:ExchangeAPI, DataManager:ExchangeData, flexible_volume=False, simulation_mode=True):
+    def __init__(self, API:ExchangeAPI, DataManager:ExchangeData, Session: SessionLive, flexible_volume=False, simulation_mode=True):
         self.API =  API
         self.API.subscribe_order_status()
         self.API.subscribe_account_balance_notice()
         self.last_call = None # Data from the last API call]
         self.DataManager = DataManager
-        self.profit_tolerance = .0015
+        self.Session = Session
+        self.profit_tolerance = .0005
         self.recently_traded = []
         self.last_balance_change = (None,None)
-
+        self.Tracker = SequenceTracker(20)
         # Options
         self.flexible_volume = flexible_volume
         self.simulation_mode = simulation_mode
 
-    def get_real_fill_price_buy(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None):
+    def get_real_fill_price_buy(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None, iter_num=0):
         ''' Calculate the real fill price to purchase/sell a currency with the amount of funds available'''
         convergence_tol = .001 # The test_volume has to be within .5% of the real_volume
         book_prices = [float(p) for p in book_prices]
         book_sizes = [float(s) for s in book_sizes]
         
+        if iter_num > 5:
+            #print(f"Fill price convergence error with {coin_name}")
+            raise ConvergenceError
+
         if len(book_prices) != len(book_sizes):
-            raise Exception("Book sizes and prices mmust be the same length")
+            raise Exception("Book sizes and prices must be the same length")
         
         if not p_guess:
             p_guess = float(book_prices[0]) 
@@ -48,7 +73,6 @@ class TradeExecution:
             i += 1
             if i > len(book_sizes):
                 raise OrderVolumeDepthError(coin_name, self.DataManager)
-        print(f"Estimated fill in orderbook level {i+1}")
         # determine the average fill price
         remaining_volume = (test_volume - sum(book_sizes[:i]))
         fill_price = (sum([price*vol for price,vol in zip(book_prices[:i], book_sizes[:i])]) + remaining_volume*book_prices[i]) / (test_volume)
@@ -56,9 +80,9 @@ class TradeExecution:
         real_volume = owned_amount / fill_price
         # Check that the real volume can be covered by the same depth as the test volume
         if abs((real_volume - test_volume)/test_volume) < convergence_tol:
-            return fill_price
+            return fill_price, i
         else:
-            return self.get_real_fill_price_buy(trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=fill_price)
+            return self.get_real_fill_price_buy(trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=fill_price, iter_num=iter_num+1)
 
     def get_real_fill_price_sell(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None, iter_num=0):
         ''' Calculate the real fill price to purchase/sell a currency with the amount of funds available'''
@@ -67,8 +91,8 @@ class TradeExecution:
         book_sizes = [float(s) for s in book_sizes]
         
         if iter_num > 5:
-            # First degub: occured when a volume on the first level was negative
-            a = 1
+            #print(f"Fill price convergence error with {coin_name}")
+            raise ConvergenceError
 
         if len(book_prices) != len(book_sizes):
             raise Exception("Book sizes and prices mmust be the same length")
@@ -84,7 +108,7 @@ class TradeExecution:
             i += 1
             if i > len(book_sizes):
                 raise OrderVolumeDepthError(coin_name, self.DataManager)
-        print(f"Estimated fill in orderbook level {i+1}")
+
         # determine the average fill price
         remaining_volume = (test_volume - sum(book_sizes[:i]))
         fill_price = (sum([price*vol for price,vol in zip(book_prices[:i], book_sizes[:i])]) + remaining_volume*book_prices[i]) / (test_volume)
@@ -93,43 +117,72 @@ class TradeExecution:
         
         # Check that the real volume can be covered by the same depth as the test volume
         if abs((real_volume - test_volume)/test_volume) < convergence_tol:
-            return fill_price
+            return fill_price, i
         else:
             return self.get_real_fill_price_sell(trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=fill_price, iter_num=iter_num+1)    
     
-    def get_real_sequence_profit(self, sequence, owned_amount=None):
-        ''' Check is the sequence matches the expected profit to within a specified tolerance
+    def get_sequence_profit(self, sequence, owned_amount=None):
+        ''' Check if the sequence matches the expected profit to within a specified tolerance
             If a volume is specified, it will return the average fill price
         '''
-        
-        total = 1
-        exp_fills = []
+        type, pair = sequence[0]
+        if type == "buy":
+            exp_owned = pair[1]
+        elif type == "sell":
+            exp_owned = pair[0]
+         
+        total = self.Session.balance[exp_owned]
+        starting_amount = self.Session.balance[exp_owned]
 
+        pair_p_level_indices = []
+        exp_fills = []
         for type, pair in sequence:
             fee = self.DataManager.Pairs[pair].fee
             tx = 1 - fee
             if type == "buy":
                 book_prices, book_sizes = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('asks')))
-                fill_price = self.get_real_fill_price_buy(type, owned_amount, book_prices, book_sizes, pair[0])
+                try:
+                    fill_price, p_level_index = self.get_real_fill_price_buy(type, total, book_prices, book_sizes, pair[0])
+                except (OrderVolumeDepthError, ConvergenceError):
+                    return -1, None
 
                 exp_fills.append(fill_price)
-                total *= (1/float(fill_price))*tx
-                owned_amount = total
+                pair_p_level_indices.append(p_level_index)
+                total *= (1/fill_price)*tx
                 
             elif type == "sell":
                 # Treat this as a buy, 
                 book_prices, book_sizes = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book('bids')))
-                fill_price = self.get_real_fill_price_sell(type, owned_amount, book_prices, book_sizes, pair[0])
-                
+                try:
+                    fill_price, p_level_index = self.get_real_fill_price_sell(type, total, book_prices, book_sizes, pair[0])
+                except (OrderVolumeDepthError, ConvergenceError):
+                    return -1, None, None
+
+                pair_p_level_indices.append(p_level_index)
                 exp_fills.append(fill_price)
-                total *= float(fill_price)*tx
-                owned_amount = total
+                total *= fill_price*tx
             else:
-                raise Exception("Ivalid sequence format")
-        if total > 1.5:
+                raise Exception("Invalid sequence format")
+        
+        
+        exp_profit = (total / starting_amount) - 1
+        if exp_profit > 1.5:
             raise Exception("Too good, something went wrong")
         
-        return total - 1, exp_fills
+        if  exp_profit > self.profit_tolerance:
+            self.Tracker.update_recents()
+            if all(trade not in self.Tracker.recents for trade in sequence):
+                print("Profitable sequence found for immediate execution")
+                realProfit = self.execute_sequence(sequence, starting_amount, exp_fills, pair_p_level_indices, exp_profit=exp_profit)  
+                if realProfit:
+                    if realProfit < 0:
+                        # Don't trade this again for a while if the trade wasn't profitable
+                        for trade in sequence:
+                            self.Tracker.remember(trade)
+            else:
+                return -1, None, None
+        
+        return exp_profit, exp_fills, pair_p_level_indices
     
     def update_sequence_orderbook(self, sequence):
         ''' Get the most recent orderbook for the sequence'''
@@ -155,7 +208,9 @@ class TradeExecution:
                 self.DataManager.Pairs[pair].orderbook = orderbook[pair]
                 self.DataManager.Pairs[pair].last_updated = time.time()
 
-    def execute_sequence(self, sequence, Session):
+    def verify_sequence(self, sequence, Session):
+        ''' Not currently being used, needs more separation'''
+        
         self.cur_waiting_on = None
         
         if isinstance(Session, SessionLive) and self.simulation_mode:
@@ -195,53 +250,105 @@ class TradeExecution:
         if profit < self.profit_tolerance:
             return profit
 
+    def execute_sequence(self, sequence, trade_volume, exp_fills, pair_p_level_indices, exp_profit=None):
         # Execute trades
         print("========= Executing Sequence =========")
-        print(f"Expecting {profit} yield. Starting with: {trade_volume}")
+        if exp_profit:
+            print(f"Expecting {exp_profit} yield. Starting with: {trade_volume}")
+        
         starting_trade_bal = trade_volume
         cur_amount = trade_volume
-    
+        last_cur = None   
         for i, trade in enumerate(sequence):
             type, pair = trade
             price_precision = self.DataManager.Pairs[pair].priceIncrement
-            limit_price =  float(Decimal(exp_fills[i]).quantize(Decimal(price_precision), rounding=ROUND_DOWN))
+            limit_price = round_to_increment(exp_fills[i], price_precision)
 
             if type == "buy":
-                size_precision = self.DataManager.Pairs[pair].qouteIncrement
-                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}, (qouteIncrement={size_precision})")
-                cur_amount = float(Decimal(cur_amount).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
-                
+                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
                 if self.simulation_mode:
                     # For buying, impact orderbook with new current amount once it's in the base currency
-                    cur_amount = Session.buy_market(pair, cur_amount, limit_price, self.DataManager.Pairs[pair].fee)
+                    cur_amount = self.Session.buy_market(pair, cur_amount, limit_price, self.DataManager.Pairs[pair].fee)
                     self.simulate_orderbook_impact(pair, cur_amount, type)
                 else:
-                    amount_to_buy = cur_amount*(1 - self.DataManager.Pairs[pair].fee)# / limit_price
-                    amount_to_buy = float(Decimal(str(amount_to_buy)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
-                    cur_amount = Session.buy_market(pair, amount_to_buy, limit_price)
-                
-            if type == "sell":
-                size_precision = self.DataManager.Pairs[pair].baseIncrement
-                cur_amount = float(Decimal(str(cur_amount)).quantize(Decimal(size_precision), rounding=ROUND_DOWN))
-                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}, (baseIncrement={size_precision})")
+                    amount_to_buy = cur_amount*(1 - self.DataManager.Pairs[pair].fee)
+                    try:
+                        cur_amount = self.Session.buy(pair, amount_to_buy, type="limit", price=limit_price)
+                    except TradeFailed:
+                        self.Tracker.remember(trade)
+                        self.remove_suspect_orders("asks", sequence, trade, pair_p_level_indices)
+                        #self.DataManager.Pairs[pair].orderbook.asks.pop(float_to_str(limit_price))
+                        if last_cur:
+                            self.return_home(from_cur=last_cur)
+                        return False
+                last_cur = pair[0]
 
+            if type == "sell":
+                print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
                 if self.simulation_mode:
                     #  For selling, impact the orderbook with the current amount while its still in the base currency
                     self.simulate_orderbook_impact(pair, cur_amount, type)
-                    cur_amount = Session.sell_market(pair, cur_amount, limit_price, self.DataManager.Pairs[pair].fee)
+                    cur_amount = self.Session.sell_market(pair, cur_amount, limit_price, self.DataManager.Pairs[pair].fee)
                 else:
-                    cur_amount = Session.sell_market(pair, cur_amount, limit_price)
-                
-        Session.update_PL()
+                    try:
+                        cur_amount = self.Session.sell(pair, cur_amount, type="limit", price=limit_price)
+                    except TradeFailed:
+                        self.Tracker.remember(trade)
+                        self.remove_suspect_orders("bids", sequence, trade, pair_p_level_indices)
+                        if last_cur:
+                            self.return_home(from_cur=last_cur)
+                        return False
+                last_cur = pair[1]
+
+        self.Session.update_PL()
         ending_trade_bal = cur_amount
-        
-        if not self.simulation_mode:    
-            self.DataManager.save_orders()
 
         actual_profit = (ending_trade_bal - starting_trade_bal) / starting_trade_bal        
         print(f"Yield: {round(actual_profit, 5)}")
         #raise Exception("Worked")
         return actual_profit
+
+    def remove_suspect_orders(self, book_type, sequence, trade, pair_p_level_indices):
+        pair = trade[1]
+        book_prices, _ = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book(book_type)))
+        i_trade_failure = sequence.index(trade)
+        p_level_index = pair_p_level_indices[i_trade_failure]
+        
+        print(f"Suspected spoofing in {pair} orderbook. Removing {p_level_index + 1 } price levels.")
+
+        for i in range(p_level_index + 1):
+            price = str(book_prices[i])
+            try:
+                if book_type == "bids":
+                    self.DataManager.Pairs[pair].orderbook.bids.pop(price)
+                elif book_type == "asks":
+                    self.DataManager.Pairs[pair].orderbook.asks.pop(price)
+            except KeyError:
+                print(f"Key error in level {i+1}")
+
+    def return_home(self, from_cur=None):
+        self.Session.refresh_balance()
+        balance = self.Session.balance
+        start_cur = self.Session.starting_cur
+        print(f"Returning session balance to {start_cur}")
+        if from_cur:
+            balance = {from_cur:self.Session.balance[from_cur]}
+        for cur in balance:
+            if cur != start_cur:
+                try:
+                    if (cur, start_cur) in self.DataManager.Pairs:
+                        print(f"Selling {(cur, start_cur)}")
+                        self.Session.sell((cur, start_cur), balance[cur], type="market")
+                    elif (start_cur, cur) in self.DataManager.Pairs:
+                        print(f"Buying {(start_cur, cur)}")
+                        self.Session.buy((start_cur, cur), balance[cur], type="market")
+                    else:
+                        print(f"Cannot return home with pair {(start_cur, cur)}: not in self.Datamanger.Pairs")
+                except TradeFailed:
+                    print(f"Could not return {cur} to starting currency")
+                    raise Exception("Fatal Error")
+        
+        self.Session.update_PL()
 
     def log_trade(self, pair, type, price, amount):
         # Save to log file
