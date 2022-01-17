@@ -7,14 +7,14 @@ from Modules.DataManagement import ExchangeData
 from Modules.TradeExecution import TradeExecution
 
 class GeneticArbitrage:
-    def __init__(self, sequence_length, set_size, DataManager:ExchangeData, Trader: TradeExecution, base_cur="USDT"):
+    def __init__(self, set_size, DataManager:ExchangeData, Trader: TradeExecution, base_cur="USDT"):
         ''' pairs: ({<pair> (str): (bid, ask), ...}'''
         self.Trader = Trader
         self.DataManager = DataManager
         self.Pairs = DataManager.Pairs # A list of available pairs to trade
         self.pairList = tuple(self.Pairs.keys())
         self.mutation_rate = .05
-        self.sequence_length = sequence_length
+        self.sequence_lengths = (3,4)
         self.set_size = set_size
         self.base_cur = base_cur
         
@@ -25,12 +25,12 @@ class GeneticArbitrage:
         # choose a currency from that list (b)
         # find pairs tradeable with b
         # b becomes a
+
         sequence = []
         prev_choice = None
         Cur_A = starting_cur
         for i in range(vector_length-1):
             tradeable_w_A = [pair for pair in pairList if Cur_A in pair]
-            #[tradeable_w_A.remove(pair) for pair in tradeable_w_A if Cur_A in pair]
 
             if not tradeable_w_A:
                 print(f"Couldn't match a tradeable pair with {Cur_A}")
@@ -54,7 +54,7 @@ class GeneticArbitrage:
                 # buy the next cur for the owned cur
                 sequence.append(("buy", (Cur_B, Cur_A)))
             else:
-                raise Exception("Big poopoo")
+                raise Exception("Fatal error occured during arbitrage sequence generation")
             Cur_A = Cur_B
 
         if ending_cur != Cur_A:
