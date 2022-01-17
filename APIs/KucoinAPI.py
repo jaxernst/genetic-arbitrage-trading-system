@@ -380,7 +380,6 @@ class KucoinAPI(ExchangeAPI):
         oID = str(uuid4()).replace('-', '')
         pair = f"{pair[0]}-{pair[1]}"
         volume_type = {"buy":"funds", "sell":"size"}
-        print(amount)
         
         data = {"clientOid":oID,
                 "side":side.lower(),
