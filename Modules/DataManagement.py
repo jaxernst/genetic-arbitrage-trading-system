@@ -26,7 +26,7 @@ class Orderbook:
         if not self.bids:
             self.bids = {}
         if not self.asks:
-            self.asks - {}
+            self.asks = {}
 
         if price == "0":
             return
@@ -41,12 +41,15 @@ class Orderbook:
                  
     def get_book(self, type):
         out = []
+    
         if type == 'bids':
-            book_sorted = sorted(self.bids.items(), reverse=True)
+            book_sorted = sorted(self.bids.items(), key=lambda x:float(x[0]), reverse=True)
         elif type == 'asks':
-            book_sorted = sorted(self.asks.items())
+            book_sorted = sorted(self.asks.items(), key=lambda x:float(x[0]))
         else:
             raise Exception("Invalid type")
+        if not book_sorted:
+            raise Exception("No book to get")
 
         for price, size in book_sorted:
             out.append([float(price), float(size)])
@@ -72,7 +75,7 @@ class Pair:
         self.sym = self.base + "/" + self.qoute
 
     def fee_spread_populated(self):
-        return isinstance(self.orderbook.bids,dict) and isinstance(self.orderbook.asks,dict) and self.fee
+        return self.orderbook.bids and self.orderbook.asks and self.fee
 
    
 class ExchangeData:
@@ -182,18 +185,11 @@ class ExchangeData:
         oID = message['orderId']
         self.Orders[oID] = []
         self.Orders[oID].append(message)
-        side = message['side']
+        
         status = message['status']
-
-        if status == "done":
-            fill_size = message['filledSize']
+        fill_size = message['filledSize']
+        if status == "done":        
             events.post_event(self.ORDER_DONE_EVENT_ID, fill_size)
-
-            #self.Orders.pop((side,(base,qoute)))
-    
-        #self.Orders[(base,qoute)]['type'] = message['type']
-        #self.Orders[(base,qoute)]['status'] = message['status']
-        #self.Orders[(base,qoute)]['filledSize'] = message['filledSize']
 
     def account_balance_update_listener(self, message):
         self.balanceUpdates.append(message)
