@@ -4,16 +4,18 @@ from typing import Dict
 import time
 
 from APIs.abstract import ExchangeAPI
-from Modules import DataManagement, ExchangeData, Pair
+from Modules import ExchangeData, Pair
 from Modules.Portfolio import Portfolio
 from util.obj_funcs import save_obj, load_obj
-from CustomExceptions import OrderVolumeDepthError, TooManyRequests
+from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed
 from util import events
+from util.round_to_increment import round_to_increment
 
 class SessionLive:
     def __init__(self, parent_account:Portfolio, API:ExchangeAPI, DataManager:ExchangeData, funding_balance:float, funding_cur:str, min_volume:int):
         self.Account = parent_account
         self.API = API
+        self.DataManager = DataManager
 
         if funding_balance <= 0:
             raise Exception("Funding balance cannot be negative or zero")
@@ -22,8 +24,9 @@ class SessionLive:
         self.starting_cur = funding_cur
         self.min_volume = min_volume # minimum amount of volume that can be traded in funding cur
         self.order_done = False
+        self.last_trade_failed = False
         self.bal_changes = {}
-      
+        self.order_max_wait_time = 7 # seconds
 
         self.balance = {funding_cur:funding_balance} # Amount of money given to the trading session in base currency
         self.trades = 0 # Number of trades executed during this session
@@ -33,21 +36,25 @@ class SessionLive:
         events.subscribe(API.ACCOUNT_BALANCE_UPDATE_EVENT_ID, self.account_balance_update_listener)
         events.subscribe(DataManager.ORDER_DONE_EVENT_ID, self.order_done_listener)
 
-    def buy_market(self, pair:tuple, amount, exp_fill):
+    def buy(self, pair:tuple, amount, type="limit", price=None):
         ''' Use fuill balance to buy pair at market
             Session has no knowledge of fees, so exp_fill must be fee adjusted
         '''
         base, qoute = pair
-
         if qoute not in self.balance or qoute not in self.Account.balance:
             print(self.balance)
             raise Exception(f"{qoute} needs to be held in order to buy {pair}")
     
         # Send a buy order to the API
-        oID = self.API.market_order(pair, "buy", amount)
-        #oID = self.API.limit_order(pair, "buy", amount, exp_fill)
-        self.trades += 1
-
+        if type == "limit":
+            precision = self.DataManager.Pairs[pair].baseIncrement
+            size = round_to_increment(amount/price, precision)
+            oID = self.API.limit_order(pair, "buy", size, price)
+        elif type == "market":
+            precision = self.DataManager.Pairs[pair].qouteIncrement
+            size = round_to_increment(amount, precision)
+            oID = self.API.market_order(pair, "buy", amount)
+        
         self.cur_waiting_on = base
         new_amount = float(self.wait_to_receive('buy', oID, pair))  
 
@@ -68,7 +75,7 @@ class SessionLive:
 
         return new_amount
 
-    def sell_market(self, pair:tuple, amount, exp_fill): 
+    def sell(self, pair:tuple, amount, type="limit", price=None): 
         ''' Use full balance to sell pair at market
             Session has no knowledge of fees, so exp_fill must be fee adjusted
         '''
@@ -78,9 +85,12 @@ class SessionLive:
             raise Exception(f"{base} needs to be held in order to sell {pair}")
     
         # Send a buy order to the API
-        oID = self.API.market_order(pair, "sell", amount)
-        #oID = self.API.limit_order(pair, "sell", amount, exp_fill)
-        self.trades += 1
+        precision = self.DataManager.Pairs[pair].baseIncrement
+        amount = round_to_increment(amount, precision)
+        if type == "limit":
+            oID = self.API.limit_order(pair, "sell", amount, price)
+        elif type == "market":
+            oID = self.API.market_order(pair, "sell", amount)
         
         self.cur_waiting_on = qoute
         new_amount = float(self.wait_to_receive('sell', oID, pair))      
@@ -102,6 +112,7 @@ class SessionLive:
 
         return new_amount
 
+
     def update_PL(self):
         self.refresh_balance()
         self.PL = (self.balance[self.starting_cur] - self.starting_balance) / self.starting_balance
@@ -116,13 +127,21 @@ class SessionLive:
         
         # Wait for order to fill
         print("waiting for order to complete")
+        t1 = time.time()
         while not self.order_done:             
+            elasped = time.time() - t1
+            if elasped > self.order_max_wait_time or self.last_trade_failed:
+                if elasped > self.order_max_wait_time:
+                    print("Order response time out")
+                self.last_trade_failed = False # Setup for next order
+                raise TradeFailed
+
             time.sleep(.01) 
         
         # Waiting for funds to settle
         error = 1
         while error > .001:
-            # Good when the amount of ethereum taken away is self.last_orde_fill_size   
+            # Good when the amount of currency taken away is self.last_order_fill_size   
             if oID in self.bal_changes:
                 if base in self.bal_changes[oID]:
                     error = (self.last_order_fill_size - abs(self.bal_changes[oID][base])) / self.last_order_fill_size
@@ -135,8 +154,11 @@ class SessionLive:
                 time.sleep(.01)
             new_amount = self.bal_changes[oID][qoute]
         
-        print(f"Order status done for: {base}, now owned {new_amount} units")
+        print(f"Order status done for: {pair}, now owned {new_amount} units")
+        self.trades += 1
         self.order_done = False
+        self.last_trade_failed = False
+
         return new_amount
     
     def account_balance_update_listener(self, message):
@@ -153,6 +175,11 @@ class SessionLive:
             self.bal_changes[oID][cur] += change
 
     def order_done_listener(self, size):
+        if float(size) == 0:
+            print("Trade failed, zero size filled")
+            self.last_trade_failed = True
+            raise TradeFailed
+        
         print("order done")
         self.last_order_fill_size = float(size)
         self.order_done = True
