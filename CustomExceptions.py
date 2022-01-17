@@ -1,5 +1,10 @@
 from util.obj_funcs import save_obj, load_obj
 
+class ConvergenceError(Exception):
+    pass
+
+class TradeFailed(Exception):
+    pass
 
 class TooManyRequests(Exception):
     ''' Raised when the API is request to rapidly'''
@@ -12,6 +17,8 @@ class SocketDisconnect(Exception):
 class OrderVolumeDepthError(Exception):
     ''' Occurs when the book depth is not enough to cover the desired volume'''
     def __init__(self, coin_name, ExchangeData):
+        pass
+        '''
         L = load_obj("banned_coins")
         L.append(coin_name)
         save_obj(L, "banned_coins")
@@ -22,5 +29,5 @@ class OrderVolumeDepthError(Exception):
         for pair in list(ExchangeData.Pairs):
             if coin_name in pair:
                 ExchangeData.Pairs.pop(pair)
-                
+        '''       
 
