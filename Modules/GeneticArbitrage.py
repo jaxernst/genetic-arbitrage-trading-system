@@ -1,8 +1,7 @@
 import random
 from statistics import median
 from typing import Tuple
-from util.obj_funcs import load_obj
-from util.currency_filters import remove_single_swapabble_coins
+from util.currency_funcs import remove_single_swapable_coins
 from Modules.DataManagement import ExchangeData
 from Modules.TradeExecution import TradeExecution
 
@@ -84,7 +83,7 @@ class GeneticArbitrage:
             return []
         
         # Removes coins with only a single qoute currency
-        out_list = remove_single_swapabble_coins(pairList)
+        out_list = remove_single_swapable_coins(pairList)
         return out_list
 
     def do_evolution(self) -> Tuple[float, Tuple[str]]:
