@@ -1,5 +1,8 @@
 from util.obj_funcs import save_obj, load_obj
 
+class OrderTimeout(Exception):
+    pass
+
 class ConvergenceError(Exception):
     pass
 
