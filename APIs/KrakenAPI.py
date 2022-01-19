@@ -5,7 +5,7 @@ import json
 import Config
 
 from util import events
-from util.currency_filters import remove_single_swapabble_coins
+from util.currency_funcs import remove_single_swapable_coins
 from APIs.WebSocketClient import WebSocketClient
 from APIs.abstract import ExchangeAPI
 
@@ -38,7 +38,7 @@ class KrakenAPI(ExchangeAPI):
                     pairs.append(f"{base}/{qoute}")
         
         if remove_singles:
-            pairs = remove_single_swapabble_coins(pairs2)
+            pairs = remove_single_swapable_coins(pairs2)
             if not tuple_separate:
                 pairs = [f"{pair[0]}/{pair[1]}" for pair in pairs]
         
