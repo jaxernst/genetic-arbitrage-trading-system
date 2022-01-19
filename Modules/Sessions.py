@@ -7,7 +7,7 @@ from APIs.abstract import ExchangeAPI
 from Modules import ExchangeData, Pair
 from Modules.Portfolio import Portfolio
 from util.obj_funcs import save_obj, load_obj
-from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed
+from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed, OrderTimeout
 from util import events
 from util.round_to_increment import round_to_increment
 
@@ -132,6 +132,7 @@ class SessionLive:
             elasped = time.time() - t1
             if elasped > self.order_max_wait_time or self.last_trade_failed:
                 if elasped > self.order_max_wait_time:
+                    raise OrderTimeout
                     print("Order response time out")
                 self.last_trade_failed = False # Setup for next order
                 raise TradeFailed
@@ -190,9 +191,8 @@ class SessionLive:
 
 
 class SessionSim:
-    def __init__(self, parent_account:Portfolio, API:ExchangeAPI, funding_balance:float, funding_cur:str, min_volume:int):
+    def __init__(self, parent_account:Portfolio=None, funding_balance:float=100, funding_cur:str="USDT", min_volume:int=5):
         self.Account = parent_account
-        self.API = API
         
         if funding_balance <= 0:
             raise Exception("Funding balance cannot be negative or zero")
