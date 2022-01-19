@@ -1,17 +1,18 @@
 from dataclasses import dataclass
 from typing import Dict
 import time
+from util import events
 
 from APIs.abstract import ExchangeAPI
-from Modules import DataManagement, ExchangeData, Pair
+from Modules import DataManagement, ExchangeData
 from Modules.Portfolio import Portfolio
 from Modules.Sessions import SessionLive, SessionSim
 
 from util.obj_funcs import save_obj, load_obj
-from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed, ConvergenceError
+from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed, ConvergenceError, OrderTimeout
 from util.SequenceTracker import SequenceTracker
 from util.round_to_increment import  round_to_increment
-from util import events  
+
 
 import decimal
 
@@ -34,21 +35,33 @@ def float_to_str(f):
 class TradeExecution:
     # Interfaces with the API to execute trades
     # Determines how much sequence volume can be traded based on order book
-    def __init__(self, API:ExchangeAPI, DataManager:ExchangeData, Session: SessionLive, flexible_volume=False, simulation_mode=True):
-        self.API =  API
-        self.API.subscribe_order_status()
-        self.API.subscribe_account_balance_notice()
-        self.last_call = None # Data from the last API call]
+
+    START_CUR_CHANGE_EVENT_ID = 1
+    TRADEABLE_MARKETS = ("USDT", "ETH", "BTC", "KCS", "USDC", "TUSD")
+
+    def __init__(self, API:ExchangeAPI, DataManager:ExchangeData, Session: SessionLive=None, starting_cur="USDT", flexible_volume=False, simulation_mode=True):
+        self.API = API
         self.DataManager = DataManager
-        self.Session = Session
-        self.profit_tolerance = .0005
-        self.recently_traded = []
-        self.last_balance_change = (None,None)
-        self.Tracker = SequenceTracker(20)
+        
         # Options
         self.flexible_volume = flexible_volume
         self.simulation_mode = simulation_mode
+        self.profit_tolerance = .0005
+        self.Tracker = SequenceTracker(20)
 
+        if Session:
+            self.Session = Session
+            if isinstance(Session, SessionLive):
+                self.API.subscribe_order_status()
+                self.API.subscribe_account_balance_notice()
+        else:
+            self.Session = SessionSim()
+            self.simulation_mode = True
+
+        self.best_exp_profit = -1
+        self.owned = starting_cur
+        
+        
     def get_real_fill_price_buy(self, trade_type, owned_amount, book_prices, book_sizes, coin_name, p_guess=None, iter_num=0):
         ''' Calculate the real fill price to purchase/sell a currency with the amount of funds available'''
         convergence_tol = .001 # The test_volume has to be within .5% of the real_volume
@@ -169,6 +182,7 @@ class TradeExecution:
         if exp_profit > 1.5:
             raise Exception("Too good, something went wrong")
         
+
         if  exp_profit > self.profit_tolerance:
             self.Tracker.update_recents()
             if all(trade not in self.Tracker.recents for trade in sequence):
@@ -182,6 +196,9 @@ class TradeExecution:
             else:
                 return -1, None, None
         
+        if exp_profit > self.best_exp_profit:
+            self.best_exp_profit = exp_profit
+
         return exp_profit, exp_fills, pair_p_level_indices
     
     def update_sequence_orderbook(self, sequence):
@@ -274,12 +291,16 @@ class TradeExecution:
                     amount_to_buy = cur_amount*(1 - self.DataManager.Pairs[pair].fee)
                     try:
                         cur_amount = self.Session.buy(pair, amount_to_buy, type="limit", price=limit_price)
-                    except TradeFailed:
+                    except (TradeFailed, OrderTimeout):
                         self.Tracker.remember(trade)
                         self.remove_suspect_orders("asks", sequence, trade, pair_p_level_indices)
-                        #self.DataManager.Pairs[pair].orderbook.asks.pop(float_to_str(limit_price))
+
                         if last_cur:
-                            self.return_home(from_cur=last_cur)
+                            if last_cur in self.TRADEABLE_MARKETS:
+                                self.owned = last_cur
+                                events.post_event(self.START_CUR_CHANGE_EVENT_ID, data=last_cur)
+                            else:
+                                self.return_home(from_cur=last_cur)
                         return False
                 last_cur = pair[0]
 
@@ -292,11 +313,15 @@ class TradeExecution:
                 else:
                     try:
                         cur_amount = self.Session.sell(pair, cur_amount, type="limit", price=limit_price)
-                    except TradeFailed:
+                    except (TradeFailed, OrderTimeout):
                         self.Tracker.remember(trade)
                         self.remove_suspect_orders("bids", sequence, trade, pair_p_level_indices)
                         if last_cur:
-                            self.return_home(from_cur=last_cur)
+                            if last_cur in self.TRADEABLE_MARKETS:
+                                self.owned = last_cur
+                                events.post_event(self.START_CUR_CHANGE_EVENT_ID, data=last_cur)
+                            else:
+                                self.return_home(from_cur=last_cur)
                         return False
                 last_cur = pair[1]
 
