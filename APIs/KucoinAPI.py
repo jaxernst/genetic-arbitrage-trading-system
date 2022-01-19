@@ -12,7 +12,7 @@ import re
 from CustomExceptions import TooManyRequests
 from util import events
 from util.obj_funcs import load_obj
-from util.currency_filters import remove_single_swapabble_coins
+from util.currency_funcs import remove_single_swapable_coins
 from APIs.WebSocketClient import WebSocketClient
 from APIs.abstract import ExchangeAPI
 from Modules.Portfolio import Portfolio
@@ -99,16 +99,18 @@ class KucoinAPI(ExchangeAPI):
         results = r['data']
         for pair_data in results:
             base, qoute = pair_data["symbol"].split("-") 
-            skip = Config.skipCurrencies + load_obj("banned_coins")
+            skip = Config.skipCurrencies
             if base not in skip and qoute not in skip:
                 pairs2.append((base,qoute))
                 if tuple_separate:
                     pairs.append((base,qoute))
                 else:
                     pairs.append(f"{base}-{qoute}")
+            else:
+                print(f"Skipping {(base,qoute)}")
         
         if remove_singles:
-            pairs = remove_single_swapabble_coins(pairs2)
+            pairs = remove_single_swapable_coins(pairs2)
             if not tuple_separate:
                 pairs = [f"{pair[0]}-{pair[1]}" for pair in pairs]
         
@@ -123,7 +125,7 @@ class KucoinAPI(ExchangeAPI):
 
         for pair_data in results:
             base, qoute = pair_data["symbol"].split("-") 
-            skip = Config.skipCurrencies + load_obj("banned_coins")
+            skip = Config.skipCurrencies
             
             for fee_dict in fees:
                 if fee_dict['symbol'] == pair_data['symbol']:
@@ -136,6 +138,8 @@ class KucoinAPI(ExchangeAPI):
                         pair_info[(base, qoute)] = pair_data
                         continue
                 pair_info[(base, qoute)] = pair_data
+            else:
+                print(f"Skipping {(base,qoute)}")
 
             if limit and len(list(pair_info.keys())) >= limit:
                 break
