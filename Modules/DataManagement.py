@@ -1,12 +1,9 @@
-import dataclasses
 from typing import Tuple, Dict
 from dataclasses import dataclass
 from APIs.abstract import ExchangeAPI
-from util.currency_filters import remove_single_swapabble_coins
 from util import events
 from util.obj_funcs import save_json
 import logging
-import bisect
 import time
 
 @dataclass
@@ -76,6 +73,9 @@ class Pair:
 
     def fee_spread_populated(self):
         return self.orderbook.bids and self.orderbook.asks and self.fee
+    
+    def get_best_ask(self):
+        return self.orderbook.get_book("asks")[0][0]
 
    
 class ExchangeData:
@@ -153,7 +153,7 @@ class ExchangeData:
                     price, size, sequence = change[0]
                     self.Pairs[(base,qoute)].orderbook.update(type, price, size, int(sequence))
                     self.orderbook_updates += 1
-            a = 1
+
     
     def pair_update_listener(self, message: Tuple[tuple,Dict[str,str]]) -> None:
         '''
