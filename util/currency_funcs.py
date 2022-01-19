@@ -1,5 +1,7 @@
-def remove_single_swapabble_coins(pairList) -> list:
-    # Remove singled swappable currencies
+from typing import List
+
+def remove_single_swapable_coins(pairList: List[tuple[str]]) -> list:
+    # Remove single swapable currencies from a list of ('base','qoute') formatted pairs.
     alts, qoutes = zip(*pairList)
     remove = []
     for top, bottom in pairList:
@@ -15,3 +17,9 @@ def remove_single_swapabble_coins(pairList) -> list:
                 remove.append(bottom)
 
     return [pair for pair in pairList if pair[0] not in remove and pair[1] not in remove]
+
+
+def get_usd_value(cur, amount, ExchangeData):
+    if cur != "USDT":
+        return amount * ExchangeData.Pairs[(cur, "USDT")].get_best_ask()
+    return amount

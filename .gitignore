@@ -146,3 +146,12 @@ APIs/__pycache__/KucoinAPI.cpython-39.pyc
 .gitignore
 dev.ipynb
 research.ipynb
+APIs/__pycache__/__init__.cpython-39.pyc
+APIs/__pycache__/KrakenAPI.cpython-39.pyc
+APIs/__pycache__/KucoinAPI.cpython-39.pyc
+obj/banned_coins.pkl
+util/__pycache__/currency_filters.cpython-39.pyc
+util/__pycache__/events.cpython-39.pyc
+util/__pycache__/obj_funcs.cpython-39.pyc
+util/__pycache__/SequenceTracker.cpython-39.pyc
+sequence_generation.py
