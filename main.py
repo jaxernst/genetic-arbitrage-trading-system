@@ -1,5 +1,6 @@
-from Modules import DataManagement, GeneticArbitrage, SequenceTrader, ExchangeData, TriangularArbitrageEngine
-from Modules.Sessions import Session
+from Modules import DataManagement, ExchangeData
+from ArbitrageEngines import TriangularArbitrageEngine, SequenceTrader
+from Modules.Session import Session
 from APIs import KrakenAPI, KucoinAPI
 from CustomExceptions import OrderVolumeDepthError
 from Modules.Account import Account

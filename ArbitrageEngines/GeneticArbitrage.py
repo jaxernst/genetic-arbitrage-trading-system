@@ -3,9 +3,9 @@ from statistics import median
 from typing import Tuple
 from util.currency_funcs import remove_single_swapable_coins
 from Modules.DataManagement import ExchangeData
-from Modules.TradeExecution import SequenceTrader
+from ArbitrageEngines import SequenceTrader
 
-class GeneticArbitrage:
+class GeneticArbitrageEngine:
     def __init__(self, set_size, DataManager:ExchangeData, SequenceTrader:SequenceTrader, base_cur="USDT"):
         ''' pairs: ({<pair> (str): (bid, ask), ...}'''
         self.SequenceTrader = SequenceTrader

@@ -4,12 +4,11 @@ import requests
 import json
 import Config
 
-from util import events
 from util.currency_funcs import remove_single_swapable_coins
 from APIs.WebSocketClient import WebSocketClient
-from APIs.abstract import ExchangeAPI
+from APIs.ExchangeAPI import ExchangeAPI
+from util import events
 
-####################################################
 
 class KrakenAPI(ExchangeAPI):
     SERVER = "https://api.kraken.com"

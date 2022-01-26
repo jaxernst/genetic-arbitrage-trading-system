@@ -14,9 +14,9 @@ level2_test.py
 # Byte-compiled / optimized / DLL files
 obj/
 **/__pycache__/
-Modules/__pycache__
-APIs/__pycache__
-util/__pycache__
+Modules/__pycache__/
+APIs/__pycache__/
+util/__pycache__/
 *.py[cod]
 *$py.class
 
@@ -145,3 +145,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+.DS_Store

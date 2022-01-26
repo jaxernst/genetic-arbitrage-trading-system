@@ -1,25 +1,20 @@
-from array import typecodes
-from dataclasses import dataclass
 from typing import Dict, List
-import time
 import copy
 from util import events
-import asyncio
 
-from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed, ConvergenceError, OrderTimeout
+from CustomExceptions import OrderVolumeDepthError, TradeFailed, ConvergenceError, OrderTimeout
 from Modules import ExchangeData
-from Modules.Sessions import Session
-from Modules.Orders import OrderVolumeSizer, Order, LimitOrder, MarketOrder
-from enums import orderStatus, tradeType, tradeSide
+from Modules.Session import Session
+from Modules.Orders import Order, LimitOrder, MarketOrder
+from Modules.OrderUtilities import OrderVolumeSizer
+from enums import tradeType, tradeSide
 from util.obj_funcs import save_obj, load_obj
 from util.SequenceTracker import SequenceTracker
 from util.round_to_increment import  round_to_increment
 
 
 class SequenceTrader:
-    # Execute sequences
-    # Execute trades
-
+    
     START_CUR_CHANGE_EVENT_ID = 1
     TRADEABLE_MARKETS = ("USDT", "ETH", "BTC", "KCS", "USDC", "TUSD")
 

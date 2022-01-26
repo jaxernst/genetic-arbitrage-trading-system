@@ -1,5 +1,10 @@
+import sys
+import os.path
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+
 from Modules import DataManagement, GeneticArbitrage, SequenceTrader, ExchangeData, TriangularArbitrageEngine
-from Modules.Sessions import Session
+from Modules.Session import Session
 from APIs import KrakenAPI, KucoinAPI
 from CustomExceptions import OrderVolumeDepthError
 from Modules.Account import Account

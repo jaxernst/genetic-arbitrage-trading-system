@@ -14,7 +14,7 @@ from util import events
 from util.currency_funcs import remove_single_swapable_coins
 from APIs.authentication import KucoinAuthenticator
 from APIs.WebSocketClient import WebSocketClient
-from APIs.abstract import ExchangeAPI
+from APIs.ExchangeAPI import ExchangeAPI
 from Modules.Orders import LimitOrder, MarketOrder
 
 ####################################################

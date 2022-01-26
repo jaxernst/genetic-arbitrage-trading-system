@@ -1,7 +1,7 @@
 
 from typing import Tuple, Dict
 from dataclasses import dataclass
-from APIs.abstract import ExchangeAPI
+from APIs.ExchangeAPI import ExchangeAPI
 from util import events
 from util.obj_funcs import save_json
 import logging

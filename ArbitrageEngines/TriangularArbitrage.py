@@ -4,7 +4,7 @@ from threading import Thread
 from typing import final
 from statistics import median
 from util.currency_funcs import remove_single_swapable_coins
-from Modules.TradeExecution import SequenceTrader
+from ArbitrageEngines import SequenceTrader
 from util import events  
 from enums import tradeSide
 

@@ -3,10 +3,10 @@ import json
 import websocket
 from time import sleep
 from CustomExceptions import SocketDisconnect
-from APIs import abstract
+from APIs import ExchangeAPI
 
 class WebSocketClient:
-    def __init__(self, parentExchange: abstract, url: str):
+    def __init__(self, parentExchange: ExchangeAPI, url: str):
         self.url = url
         self.ws = websocket.WebSocketApp(url, on_message=self.on_message, 
                                             on_open=self.on_open, 

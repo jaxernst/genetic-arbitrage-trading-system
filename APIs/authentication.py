@@ -27,9 +27,7 @@ class KucoinAuthenticator:
     def request(self, endpoint, type="GET", data=None):
         URL = self.SERVER + endpoint
         now = int(time.time() * 1000)
-        
         str_to_sign = str(now) + type.upper() + endpoint
-
         if data:
             str_to_sign += data
 
@@ -58,3 +56,5 @@ class KucoinAuthenticator:
         return base64.b64encode(hmac.new(self.API_SECRET.encode('utf-8'), msg.encode('utf-8'), hashlib.sha256).digest())
     
 
+class KrakenAuthenticator:
+    pass

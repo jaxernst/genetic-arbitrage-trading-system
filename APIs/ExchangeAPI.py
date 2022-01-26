@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple
 
 class ExchangeAPI(ABC):
-
     @abstractmethod
     def get_tradeable_pairs(self, tuple_separate=True, remove_singles=True) -> list:
         pass
