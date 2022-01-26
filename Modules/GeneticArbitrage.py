@@ -3,12 +3,12 @@ from statistics import median
 from typing import Tuple
 from util.currency_funcs import remove_single_swapable_coins
 from Modules.DataManagement import ExchangeData
-from Modules.TradeExecution import TradeExecution
+from Modules.TradeExecution import SequenceTrader
 
 class GeneticArbitrage:
-    def __init__(self, set_size, DataManager:ExchangeData, Trader: TradeExecution, base_cur="USDT"):
+    def __init__(self, set_size, DataManager:ExchangeData, SequenceTrader:SequenceTrader, base_cur="USDT"):
         ''' pairs: ({<pair> (str): (bid, ask), ...}'''
-        self.Trader = Trader
+        self.SequenceTrader = SequenceTrader
         self.DataManager = DataManager
         self.Pairs = DataManager.Pairs # A list of available pairs to trade
         self.pairList = tuple(self.Pairs.keys())
@@ -98,7 +98,7 @@ class GeneticArbitrage:
 
         while len(population) > 2:
             # Evaluate sequences
-            profits = [self.Trader.get_sequence_profit(sequence)[0] for sequence in population if sequence]
+            profits = [self.SequenceTrader.get_sequence_profit(sequence)[0] for sequence in population if sequence]
             
             # Take the best
             i = profits.index(max(profits))
@@ -134,7 +134,7 @@ class GeneticArbitrage:
             population.append(best)
             prev_population = population
         
-        final_profits = [self.Trader.get_sequence_profit(sequence)[0] for sequence in population]
+        final_profits = [self.SequenceTrader.get_sequence_profit(sequence)[0] for sequence in population]
         profit_max = max(final_profits)
         i_max = final_profits.index(profit_max)
         sequence = population[final_profits.index(profit_max)]

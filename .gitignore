@@ -4,13 +4,19 @@ ToDo.txt
 References/
 Kucoin_API_Key.json
 test_auth.py
+dev.ipynb
+research.ipynb
+obj/banned_coins.pkl
+
+sequence_generation.py
+level2_test.py
 
 # Byte-compiled / optimized / DLL files
 obj/
 **/__pycache__/
-Modules/__pycache__/
+Modules/__pycache__
 APIs/__pycache__
-util/__pycache__/
+util/__pycache__
 *.py[cod]
 *$py.class
 
@@ -139,19 +145,3 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-
-__pycache__/Config.cpython-39.pyc
-.gitignore
-APIs/__pycache__/KucoinAPI.cpython-39.pyc
-.gitignore
-dev.ipynb
-research.ipynb
-APIs/__pycache__/__init__.cpython-39.pyc
-APIs/__pycache__/KrakenAPI.cpython-39.pyc
-APIs/__pycache__/KucoinAPI.cpython-39.pyc
-obj/banned_coins.pkl
-util/__pycache__/currency_filters.cpython-39.pyc
-util/__pycache__/events.cpython-39.pyc
-util/__pycache__/obj_funcs.cpython-39.pyc
-util/__pycache__/SequenceTracker.cpython-39.pyc
-sequence_generation.py

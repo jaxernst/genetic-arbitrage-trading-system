@@ -2,24 +2,28 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 from typing import List, Tuple
 from uuid import uuid4
-from time import sleep, time
+import time
+import asyncio
 import requests
 import json
-from APIs.authentication import KucoinAuthenticator
 import Config
 import re
 
 from CustomExceptions import TooManyRequests
 from util import events
-from util.obj_funcs import load_obj
 from util.currency_funcs import remove_single_swapable_coins
+from APIs.authentication import KucoinAuthenticator
 from APIs.WebSocketClient import WebSocketClient
 from APIs.abstract import ExchangeAPI
-from Modules.Portfolio import Portfolio
+from Modules.Orders import LimitOrder, MarketOrder
 
 ####################################################
 
+
 class KucoinAPI(ExchangeAPI):
+    ''' 
+    Creates websocket connection, requests/posts APi endpoints, subscribes/unsubscribes from websokcet streams, distributes websocket messages
+    '''
     PAIR_UPDATE_EVENT_ID = "KucoinPairUpdate"
     ORDER_UPDATE_EVENT_ID = "OrderStatusUpdate"
     ACCOUNT_BALANCE_UPDATE_EVENT_ID = "AccountBalanceUpdate"
@@ -77,8 +81,8 @@ class KucoinAPI(ExchangeAPI):
                             "type":"ping"}
                 self.socket.send(json.dumps(payload))
                 print("sending ping")
-                send_time = time()
-                sleep(self.pingInterval*self.ping_interval_scale)
+                send_time = time.time()
+                time.sleep(self.pingInterval*self.ping_interval_scale)
 
                 if self.last_pong_time < send_time:
                     # No pong received since last sent
@@ -185,7 +189,7 @@ class KucoinAPI(ExchangeAPI):
             return (float(bid), float(ask), float(last))
         else:
             print(r)
-            raise Exception("No data from ticker data request")
+            return None, None, None
  
     def get_multiple_spreads(self, pairs: List[tuple]) -> List[Tuple[float]]:
         urls = [f"{self.SERVER}{self.TICKER_ENDPOINT}?symbol={pair[0]}-{pair[1]}" for pair in pairs] 
@@ -218,13 +222,13 @@ class KucoinAPI(ExchangeAPI):
         for chunk in divide_chunks(pairs, 20):
             if t_last_request:
                 
-                while (time() - t_last_request) < 1/self.request_freq:
-                    sleep(.05)
+                while (time.time() - t_last_request) < 1/self.request_freq:
+                    time.sleep(.05)
             
             urls = [f"{self.SERVER}{self.ORDERBOOK_ENDPOINT}?symbol={pair[0]}-{pair[1]}" for pair in chunk] 
             with ThreadPoolExecutor(max_workers=40) as pool:
                 response_list = list(pool.map(requests.get, urls))
-            t_last_request = time()
+            t_last_request = time.time()
 
             for i, response in enumerate(response_list):
                 data = response.json()
@@ -255,11 +259,11 @@ class KucoinAPI(ExchangeAPI):
         for payload in self.payloads:
             payload['type'] = "unsubscribe"
             self.socket.send(json.dumps(payload)) 
-            sleep(.1)     
+            time.sleep(.1)     
         for payload in self.payloads:
             payload['type'] = "subscribe"
             self.socket.send(json.dumps(payload)) 
-            sleep(.1)  
+            time.sleep(.1)  
 
     def subscribe_all(self, pairs: List[tuple]=None, limit:int=300) -> None:
         ''' Subscribe too pair price and orderbook stream'''
@@ -336,7 +340,7 @@ class KucoinAPI(ExchangeAPI):
 
         if message['type'] == "pong":
             print(message)
-            self.last_pong_time = time()
+            self.last_pong_time = time.time()
             return
         if message['type'] != "message":
             print(message)
@@ -364,14 +368,14 @@ class KucoinAPI(ExchangeAPI):
         if "/account/balance" in message['topic']:
             events.post_event(self.ACCOUNT_BALANCE_UPDATE_EVENT_ID, message['data'])
 
-    def market_order(self, pair, side, amount):
+    def market_order(self, order:MarketOrder):
         oID = str(uuid4()).replace('-', '')
-        pair = f"{pair[0]}-{pair[1]}"
+        pair = f"{order.pair[0]}-{order.pair[1]}"
         volume_type = {"buy":"funds", "sell":"size"}
         data = json.dumps({"clientOid":oID,
-                            "side":side.lower(),
+                            "side":order.side.name.lower(),
                             "symbol":pair,
-                            volume_type[side.lower()]:amount,
+                            volume_type[order.side.name.lower()]:order.amount,
                             "type":"market"})
 
         r = self.Auth.request(self.ORDER_ENDPOINT, "POST", data=data).json()
@@ -380,17 +384,16 @@ class KucoinAPI(ExchangeAPI):
         if 'data' in r:
             return r['data']['orderId']
 
-    def limit_order(self, pair, side, amount, price, tif="FOK"):
+    def limit_order(self, order:LimitOrder):
         oID = str(uuid4()).replace('-', '')
-        pair = f"{pair[0]}-{pair[1]}"
-        volume_type = {"buy":"funds", "sell":"size"}
+        pair = f"{order.pair[0]}-{order.pair[1]}"
         
         data = {"clientOid":oID,
-                "side":side.lower(),
+                "side":order.side.name.lower(),
                 "symbol":pair,
-                "size":amount,
-                "price":price,
-                "timeInForce":tif,
+                "size":order.amount,
+                "price":order.price,
+                "timeInForce":order.tif.value,
                 "type":"limit"}
 
         r = self.Auth.request(self.ORDER_ENDPOINT, "POST", data=json.dumps(data)).json()
@@ -399,7 +402,7 @@ class KucoinAPI(ExchangeAPI):
         if 'data' in r:
             return r['data']['orderId']
 
-    def get_portfolio(self, return_raw_balance=False) -> Portfolio:
+    def get_portfolio(self, return_raw_balance=False) -> dict:
         '''Request portfolio information for an authenticated account and return a portfolio object'''
         r = self.Auth.request(self.ACCOUNT_ENDPOINT, "GET").json()
 
@@ -409,7 +412,6 @@ class KucoinAPI(ExchangeAPI):
             if data['type'] == "trade":
                 balance[data['currency']] = float(data['balance'])
         
-        if return_raw_balance:
-            return balance
+        return balance
 
-        return Portfolio(balance)
+

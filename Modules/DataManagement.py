@@ -1,3 +1,4 @@
+
 from typing import Tuple, Dict
 from dataclasses import dataclass
 from APIs.abstract import ExchangeAPI
@@ -5,6 +6,7 @@ from util import events
 from util.obj_funcs import save_json
 import logging
 import time
+
 
 @dataclass
 class Orderbook:
@@ -49,8 +51,8 @@ class Orderbook:
             raise Exception("No book to get")
 
         for price, size in book_sorted:
-            out.append([float(price), float(size)])
-        return out
+            out.append((float(price), float(size)))
+        return tuple(out)
 
 @dataclass
 class Pair:
@@ -76,9 +78,12 @@ class Pair:
     
     def get_best_ask(self):
         return self.orderbook.get_book("asks")[0][0]
-
-   
+  
 class ExchangeData:
+    ''' 
+    Opens websockets feeds
+    Receives and allocates data from exchanges
+    '''
 
     PAIR_UPDATE_EVENT_ID = "ExchangeDataPairUpdate"
     ORDER_DONE_EVENT_ID = "OrderDoneEvent"
@@ -98,8 +103,6 @@ class ExchangeData:
 
         logging.basicConfig(filename='util/orders.log', encoding='utf-8', level=logging.DEBUG)
         events.subscribe(API.PAIR_UPDATE_EVENT_ID, self.pair_update_listener)
-        events.subscribe(API.ORDER_UPDATE_EVENT_ID, self.order_update_listener)
-        events.subscribe(API.ACCOUNT_BALANCE_UPDATE_EVENT_ID, self.account_balance_update_listener)
         events.subscribe(API.LEVEL2_UPDATE_EVENT_ID, self.level_2_update_listener)
         events.subscribe(API.DISCONNECT_EVENT_ID, self.build_orderbook)
 
@@ -109,7 +112,7 @@ class ExchangeData:
         self.orderbook_cache = {}
         print("Subscribing to ordebook stream...")
         self.API.subscribe_level2(list(self.Pairs.keys()))
-        time.sleep(.4) # Delay to allow orders to get cached
+        time.sleep(.1) # Delay to allow orders to get cached
         print("Getting orderbook snapshot...")
         snapshot = self.API.get_multiple_orderbooks(list(self.Pairs.keys()))
         
@@ -129,10 +132,10 @@ class ExchangeData:
                 if int(cache_sequence) > self.Pairs[pair].orderbook.last_sequence:
                     type, price, size = self.orderbook_cache[pair][cache_sequence]
                     self.Pairs[pair].orderbook.update(type, price, size, int(cache_sequence))
-            try:
-                print(f"{pair} calibration status set to True with {len(self.Pairs[pair].orderbook.missing_sequences)} missing sequences")
-            except:
-                print(f"{pair} calibration status set to True with 0 missing sequences")
+            #try:
+             #   print(f"{pair} calibration status set to True with {len(self.Pairs[pair].orderbook.missing_sequences)} missing sequences")
+            ##except:
+             #   print(f"{pair} calibration status set to True with 0 missing sequences")
 
         self.level2_calibrated = True
 
@@ -153,12 +156,11 @@ class ExchangeData:
                     price, size, sequence = change[0]
                     self.Pairs[(base,qoute)].orderbook.update(type, price, size, int(sequence))
                     self.orderbook_updates += 1
-
-    
+ 
     def pair_update_listener(self, message: Tuple[tuple,Dict[str,str]]) -> None:
         '''
         This function is called when pair data is received through the websocket.
-        Mesaage: tuple = (("base","qoute"), {'close':..., 'ask':..., 'bid':...})
+        Message: tuple = (("base","qoute"), {'close':..., 'ask':..., 'bid':...})
         '''
 
         pair = message[0]
@@ -180,16 +182,6 @@ class ExchangeData:
         
         if self.showPairUpdates:
             self.show_coins()
-
-    def order_update_listener(self, message):
-        oID = message['orderId']
-        self.Orders[oID] = []
-        self.Orders[oID].append(message)
-        
-        status = message['status']
-        fill_size = message['filledSize']
-        if status == "done":        
-            events.post_event(self.ORDER_DONE_EVENT_ID, fill_size)
 
     def account_balance_update_listener(self, message):
         self.balanceUpdates.append(message)
@@ -247,3 +239,52 @@ class ExchangeData:
                 self.Pairs[pair].close = close
                 self.Pairs[pair].last_updated = time.time()
     
+    def subscribe_order_status(self):
+        self.API.subscribe_order_status()
+    
+    def subscribe_account_balance_notice(self):
+        self.API.subscribe_account_balance_notice()
+
+
+'''
+        def simulate_orderbook_impact(self, pair, amount, trade_type):
+         Update the orderbook to reflect the impact of a trade
+        if trade_type == "buy":
+            orderbook = self.DataManager.Pairs[pair].orderbook.get_book('asks')    
+        if trade_type == "sell":
+            orderbook = self.DataManager.Pairs[pair].orderbook.get_book('bids')
+        book_prices, book_sizes = list(zip(*orderbook))
+        
+        i = 0
+        while book_sizes[i] <= amount:
+            amount -= book_sizes[i]
+            orderbook[i][1] = 0
+            i += 1
+            if i > len(book_sizes):
+                raise OrderVolumeDepthError(pair[0])
+
+        print(f"Simulating orderbook impact at {i+1} level/s")
+        
+        # Subtract volume from the last level reached with the amount trade
+        remaining = book_sizes[i] - amount
+        if trade_type == "buy":
+            if book_prices[i] in self.DataManager.Pairs[pair].orderbook.asks:
+                self.DataManager.Pairs[pair].orderbook.asks[book_prices[i]] = str(remaining)
+        elif trade_type == "sell":
+            if book_prices[i] in self.DataManager.Pairs[pair].orderbook.bids:
+                self.DataManager.Pairs[pair].orderbook.bids[book_prices[i]] = str(remaining)
+    
+
+        # Remove price levels where volume is fully consumed (if first level isn't enough to cover)
+        for price in book_prices[:i]:
+            if trade_type == "buy":
+                if price in self.DataManager.Pairs[pair].orderbook.asks:
+                    del self.DataManager.Pairs[pair].orderbook.asks[price]
+                else:
+                    print("Expected orderbook price no longer present")
+            elif trade_type == "sell":
+                if price in self.DataManager.Pairs[pair].orderbook.bids:
+                    del self.DataManager.Pairs[pair].orderbook.bids[price]
+                else:
+                    print("Expected orderbook price no longer present")
+'''
