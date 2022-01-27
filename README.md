@@ -1,7 +1,7 @@
 # Genetic Arbitrage Trading System Overview
 A genetic algorithm based swap trading system to automate trading on cryptocurrency exchanges.
 
-Overview
+## Overview
 This is a modular trading system designed to be operated with 'ArbitrageEngines', which are plugin-style modules that identify artbitrage opportunities across and within exchanges. To provide real-time exchange order feeds to the system, exchange websocket feeds are utilized. 
 
 
