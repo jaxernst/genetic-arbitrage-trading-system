@@ -54,9 +54,7 @@ class LimitOrder(Order):
             self.required_balance = self.amount
         return super().__post_init__()
         
-
-
-class OrderGenerator:
+    class OrderGenerator:
     ''' 
     Create and format orders based on exchange defined price increments, size increments, and 
     the balance of the Tradeable (Account or Session)

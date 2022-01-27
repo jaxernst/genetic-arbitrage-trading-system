@@ -29,4 +29,5 @@ Trader = TradeExecution.SequenceTrader(ExchangeData)
 
 TA = TriangularArbitrageEngine(Trader)
 
+
 TA.begin("USDT")

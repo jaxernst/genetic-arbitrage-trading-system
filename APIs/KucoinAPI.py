@@ -49,7 +49,7 @@ class KucoinAPI(ExchangeAPI):
         self.socket = WebSocketClient(self, url=self.generate_connection_url(private))
         self.streaming = self.socket.connected
         self.showDataStream = False
-        self.active_streams = []
+        self.active_streams = [] # stores EVENT_IDs
         self.request_freq = 5
         self.ping_interval_scale = 1
         self.last_pong_time = 0
