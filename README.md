@@ -1,4 +1,4 @@
-# Genetic Arbitrage Trading System Overview
+## Genetic Arbitrage Trading System Overview
 A genetic algorithm based swap trading system to automate trading on cryptocurrency exchanges.
 
 This trading system utilizes a novel genetic algorithm to identify arbitrage opporunties in cryptocurrency markets. This type of arbitrage stems from triangular arbitrage, but takes it a step further by allowing swap-sequences to occur between more than 3 currencies. The genetic algorithm performs best with a large number of assets to swap between, as it gains an edge over compeition when the perumations of tradeable sequences are very large. The source modules also includes full functionality for API/Websocket authentication and trade automation (only Kucoin supported currently).
