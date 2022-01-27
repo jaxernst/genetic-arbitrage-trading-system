@@ -5,9 +5,6 @@ from typing import Dict, Optional
 
 from enums import tradeType
 
-
-
-
 class Account(Tradeable):
     # Contains holdings
     # Alows funds to be deposited
@@ -81,4 +78,4 @@ class Account(Tradeable):
         self.Account.balance = self.balance
 
     def submit_order(self, order:Order):
-        return super().__submit_order(self.API, order)
+        return super()._submit_order(self.API, order)

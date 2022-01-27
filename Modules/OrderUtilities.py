@@ -77,7 +77,9 @@ class OrderSettlementHandler:
 
         events.subscribe(API.ACCOUNT_BALANCE_UPDATE_EVENT_ID, self.account_balance_update_listener)
         events.subscribe(API.ORDER_UPDATE_EVENT_ID, self.order_update_listener)
-
+        self.activate_order_update_stream(API)
+        self.activate_account_balance_update_stream(API)
+        
     def wait_to_receive(self) -> float:
         print("waiting for order to complete")
         t1 = time.time()
@@ -118,3 +120,11 @@ class OrderSettlementHandler:
                 self.Order.status = orderStatus.FILLED
         else:
             self.Order.status = self.status_keys[status]
+
+    def activate_account_balance_update_stream(self, API) -> None:
+        if API.ACCOUNT_BALANCE_UPDATE_EVENT_ID not in API.active_streams:
+            API.subscribe_account_balance_notice()
+
+    def activate_order_update_stream(self, API) -> bool:
+        if API.ACCOUNT_BALANCE_UPDATE_EVENT_ID not in API.active_streams:
+            API.subscribe_order_status()
