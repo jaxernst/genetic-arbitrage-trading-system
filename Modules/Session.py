@@ -39,6 +39,7 @@ class Session(Tradeable):
         order.simulated = self.simulated
         if self.balance[order.exp_owned] >= order.required_balance:
             new_amount = super()._submit_order(self.Account.API, order)
+            self.trades += 1
         else:
             raise Exception("Session funds do not meet order requirements")
 

@@ -1,10 +1,14 @@
+from email.mime import base
+from Modules.DataManagement import ExchangeData
 from enums import orderStatus, tradeType, tradeSide, timeInForce
 from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_DOWN
 from typing import Dict
+
 
 @dataclass   
 class Order:
-    side: tradeType
+    side: tradeSide
     pair: tuple[str,str]
     
     def __post_init__(self):
@@ -52,5 +56,61 @@ class LimitOrder(Order):
         
 
 
+class OrderGenerator:
+    ''' 
+    Create and format orders based on exchange defined price increments, size increments, and 
+    the balance of the Tradeable (Account or Session)
+    '''
+    def __init__(self, DataManager:ExchangeData=None):
+        self.DataManager = DataManager # Need for order parameter increments
 
+    def create_order_from_funds(self, side:tradeSide, pair:tuple[str,str], funds:float, price:float=None) -> Order:
+        ''' Create and format an order with with amount of funds (owned currency) given'''
+        if price is None:
+            order = MarketOrder(side, pair, funds)
+            return self.format_market_order(order)
+        else:
+            if side == tradeSide.BUY:
+                order_amount = funds / price 
+
+            order = LimitOrder(side, pair, order_amount, price)
+            return self.format_limit_order(order)
+
+    def format_limit_order(self, order:Order, priceIncrement:str=None, baseIncrement:str=None) -> Order:
+        ''' Amount is always in base curreny for limit orders'''
+        if self.DataManager is None:
+            if priceIncrement is None or baseIncrement is None:
+                raise Exception("priceIncrement and baseIncrement arguments required.")
+        else:
+            priceIncrement = self.DataManager.Pairs[order.pair].priceIncrement
+            baseIncrement = self.DataManager.Pairs[order.pair].baseIncrement
+
+        order.price = self.round_to_increment(order.price, priceIncrement)
+        order.amount = self.round_to_increment(order.amount, baseIncrement)
+        return order
+    
+    def format_market_order(self, order:Order, qouteIncrement:str=None, baseIncrement:str=None) -> Order:
+        if order.side == tradeSide.BUY:
+            if self.DataManager is None:
+                if qouteIncrement is None:
+                    raise Exception("qouteIncrement is required to format a market buy order")
+            else:
+                qouteIncrement = self.DataManager.Pairs[order.pair].qouteIncrement     
+            
+            order.amount = self.round_to_increment(order.amount, qouteIncrement)
+
+        elif order.side == tradeSide.SELL:
+            if self.DataManager is None:
+                if baseIncrement is None:
+                    raise Exception("baseIncrement is required to format a market sell order")
+            else:
+                baseIncrement = self.DataManager.Pairs[order.pair].baseIncrement
+
+            order.amount = self.round_to_increment(order.amount, baseIncrement)
+        
+        return order
+    
+    def round_to_increment(self, amount, precision):
+        ''' Round down to the exchange defined precision'''
+        return float(Decimal(str(amount)).quantize(Decimal(precision), rounding=ROUND_DOWN))
 

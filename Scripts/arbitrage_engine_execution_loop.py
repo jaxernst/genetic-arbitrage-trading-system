@@ -1,3 +1,8 @@
+import sys
+import os.path
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+
 from APIs.KucoinAPI import KucoinAPI
 from CustomExceptions import OrderVolumeDepthError
 from Modules import GeneticArbitrage, TradeExecution, ExchangeData, TriangularArbitrageEngine

@@ -5,7 +5,7 @@ from util import events
 from CustomExceptions import OrderVolumeDepthError, TradeFailed, ConvergenceError, OrderTimeout
 from Modules import ExchangeData
 from Modules.Session import Session
-from Modules.Orders import Order, LimitOrder, MarketOrder
+from Modules.Orders import Order, LimitOrder, MarketOrder, OrderGenerator
 from Modules.OrderUtilities import OrderVolumeSizer
 from enums import tradeType, tradeSide
 from util.obj_funcs import save_obj, load_obj
@@ -21,11 +21,12 @@ class SequenceTrader:
     def __init__(self, DataManager:ExchangeData, Session: Session=None, starting_cur="USDT"):
         self.DataManager = DataManager
         self.OrderVolumeSizer = OrderVolumeSizer(self.DataManager.Pairs)
+        self.order_gen = OrderGenerator(self.DataManager)
         self.session = Session
-        
+    
         # Options
         self.default_trade_type = tradeType.LIMIT
-        self.profit_tolerance = .0005
+        self.profit_tolerance = .00025
         self.Tracker = SequenceTracker(20)
 
         self.DataManager.subscribe_order_status()
@@ -112,11 +113,13 @@ class SequenceTrader:
             print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
             side, pair = trade
             limit_price = exp_fills[i]
+            
             if side == tradeSide.BUY:
                 amount_to_buy = cur_amount*(1 - self.DataManager.Pairs[pair].fee)
-                order = self.create_order(self.default_trade_type, side, pair, amount_to_buy, limit_price)
+                order = self.order_gen.create_order_from_funds(side, pair, amount_to_buy, limit_price)
             else:
-                order = self.create_order(self.default_trade_type, side, pair, cur_amount, limit_price)
+                order = self.order_gen.create_order_from_funds(side, pair, cur_amount, limit_price)
+            
             try:
                 cur_amount = self.session.submit_order(order)
                 self.owned = pair
@@ -129,7 +132,7 @@ class SequenceTrader:
                         events.post_event(self.START_CUR_CHANGE_EVENT_ID, data=last_cur)
                     else:
                         #self.return_home(from_cur=last_cur)
-                        print("Can;t return home yet")
+                        print("Can't return home yet")
                 return False
 
             last_cur = pair[0]
@@ -187,38 +190,7 @@ class SequenceTrader:
         
         self.session.update_PL()
 
-    def create_order(self, type:tradeType, side:tradeSide, pair:tuple[str,str], owned_amount:float, limit_price:float=None) -> Order:
-        if type == tradeType.LIMIT:
-            order_amount, price = self.format_limit_order_params(side, pair, owned_amount, limit_price)
-            return LimitOrder(side, pair, order_amount, price)
-        elif type == tradeType.MARKET:
-            order_amount = self.format_market_order_amount(side, pair, owned_amount)
-            return MarketOrder(side, pair, order_amount)
-        
-    def format_limit_order_params(self, side:tradeSide, pair:tuple[str], owned_amount:float, price:float) -> tuple[float, float]:
-        ''' Amount is always in base curreny for limit orders'''
-        price_precision = self.DataManager.Pairs[pair].priceIncrement
-        price = round_to_increment(price, price_precision)
-
-        size_precision = self.DataManager.Pairs[pair].baseIncrement
-        if side == tradeSide.BUY:
-            order_amount = round_to_increment(owned_amount/price, size_precision)
-        elif side == tradeSide.SELL:
-            order_amount = round_to_increment(owned_amount, size_precision)
-
-        return order_amount, price
     
-    def format_market_order_amount(self, side:tradeSide, pair:tuple[str], owned_amount:float) -> float:
-        if side == tradeSide.BUY:
-            precision = self.DataManager.Pairs[pair].qouteIncrement
-            order_amount = round_to_increment(owned_amount, precision)
-        elif side == tradeSide.SELL:
-            precision = self.DataManager.Pairs[pair].baseIncrement
-            order_amount = round_to_increment(owned_amount, precision)
-
-        return order_amount
-
-
 
 
 
