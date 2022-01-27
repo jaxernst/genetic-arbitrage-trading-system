@@ -18,7 +18,7 @@ from APIs.ExchangeAPI import ExchangeAPI
 from Modules.Orders import LimitOrder, MarketOrder
 
 ####################################################
-
+# This class is long overdue for a cleanup
 
 class KucoinAPI(ExchangeAPI):
     ''' 
@@ -49,7 +49,7 @@ class KucoinAPI(ExchangeAPI):
         self.socket = WebSocketClient(self, url=self.generate_connection_url(private))
         self.streaming = self.socket.connected
         self.showDataStream = False
-        
+        self.active_streams = []
         self.request_freq = 5
         self.ping_interval_scale = 1
         self.last_pong_time = 0
@@ -120,7 +120,7 @@ class KucoinAPI(ExchangeAPI):
         
         return pairs
     
-    def get_pair_info(self, pairs=None, limit=None):
+    def get_pair_info(self, pairs:list=None, limit:int=None) -> dict:
         r1 = requests.get(f"{self.SERVER}{self.SYMBOLS_ENDPOINT}").json()
         r2 = self.Auth.request(f"{self.TRADE_FEE_ENDPOINT}", "GET").json()
         pair_info = {}
@@ -188,7 +188,6 @@ class KucoinAPI(ExchangeAPI):
             last = r['data']['price']
             return (float(bid), float(ask), float(last))
         else:
-            print(r)
             return None, None, None
  
     def get_multiple_spreads(self, pairs: List[tuple]) -> List[Tuple[float]]:
@@ -308,15 +307,17 @@ class KucoinAPI(ExchangeAPI):
                         "type": "subscribe",
                         "topic": f"/market/level2:{symbols}"}
             self.socket.send(json.dumps(payload))
-        return
         
+        self.active_streams.append(self.LEVEL2_UPDATE_EVENT_ID)    
+   
     def subscribe_order_status(self):
         payload = { 'id': self.connectID,
                     "type": "subscribe",
                     "topic": "/spotMarket/tradeOrders",
                     "privateChannel": "true"}
         self.payloads.append(payload)
-        self.socket.send(json.dumps(payload))      
+        self.socket.send(json.dumps(payload))
+        self.active_streams.append(self.ORDER_UPDATE_EVENT_ID)      
     
     def subscribe_account_balance_notice(self):
         payload = { 'id': self.connectID,
@@ -325,6 +326,7 @@ class KucoinAPI(ExchangeAPI):
                     "privateChannel": "true"}
         self.payloads.append(payload)
         self.socket.send(json.dumps(payload)) 
+        self.active_streams.append(self.ACCOUNT_BALANCE_UPDATE_EVENT_ID)
 
     def stream_listen(self, message) -> None:
         ''' Receive incoming message and send on a tuple with the following format:
