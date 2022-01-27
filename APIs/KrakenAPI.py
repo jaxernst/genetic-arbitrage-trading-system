@@ -9,6 +9,9 @@ from APIs.WebSocketClient import WebSocketClient
 from APIs.ExchangeAPI import ExchangeAPI
 from util import events
 
+#############################
+# Not maintained currently
+#############################
 
 class KrakenAPI(ExchangeAPI):
     SERVER = "https://api.kraken.com"
