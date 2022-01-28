@@ -15,17 +15,11 @@ class Tradeable:
             oID = API.limit_order(order)
         if isinstance(order, MarketOrder):
             oID = API.market_order(order)
-
+        
+        print("Order submitted to the API")
         order.ID = oID
         if wait_for_settlement:
-            return self._settle_order(API, order)
-        
-        return None
-
-    def _settle_order(self, API:ExchangeAPI, order:Order) -> float:
-        settler = OrderSettlementHandler(API, order)
-        received_amount = settler.wait_to_receive()
-        return received_amount
+            return settler.wait_to_receive()
 
     def _submit_fake_order(self, order) -> None:
         pass
