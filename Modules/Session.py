@@ -19,6 +19,7 @@ class Session(Tradeable):
     def __init__(self, Account:Account,  funding_cur:str=None, funding_balance:float=None, min_volume=None, simulated=True):
         self.Account = Account
         self.simulated = simulated
+        self.orders = []
         
         if not (funding_balance and funding_cur):
             funding_cur, funding_balance = self.Account.get_largest_holding()
@@ -34,30 +35,38 @@ class Session(Tradeable):
         self.trades = 0 # Number of trades executed during this session
         self.PL = 0 # Current profit loss for the session
         self.average_gain = None
+        self.last_cur_received = funding_cur
 
     def submit_order(self, order:Order) -> float:
         order.simulated = self.simulated
         if self.balance[order.exp_owned] >= order.required_balance:
-            new_amount = super()._submit_order(self.Account.API, order)
+            order_succeeded = super()._submit_order(self.Account.API, order, wait_for_settlement=True)
+            self.orders.append(order)
+            if not order_succeeded:
+                return False
+            
             self.trades += 1
+            self.update_balance(order)
+            return True
         else:
             raise Exception("Session funds do not meet order requirements")
-
-        self.update_balance(new_amount, order)
-        return new_amount
         
-    def update_balance(self, received_amount:float, complete_order:Order) -> None:
+    def update_balance(self, complete_order:Order) -> None:
         prev_owned = complete_order.exp_owned
         now_owned = complete_order.aquiring
         self.balance[prev_owned] -= complete_order.required_balance
+        
         if now_owned not in self.balance:
             self.balance[now_owned] = 0
+        self.balance[now_owned] += complete_order.received_amount
         
-        self.balance[complete_order.aquiring] += received_amount
+        self.last_cur_received = now_owned
 
     def update_PL(self) -> None:
         self.PL = (self.balance[self.starting_cur] - self.starting_balance) / self.starting_balance
 
+    def log_failed_trade():
+        print("Logging failed trade")
     
 
         
