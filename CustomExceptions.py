@@ -1,5 +1,9 @@
 from util.obj_funcs import save_obj, load_obj
 
+class RestartEngine(Exception):
+    ''' Occurs when the arbitrage engine must restart to change the starting currency'''
+    pass
+
 class OrderTimeout(Exception):
     pass
 
