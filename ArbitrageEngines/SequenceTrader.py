@@ -2,7 +2,7 @@ from typing import Dict, List
 import copy
 from util import events
 
-from CustomExceptions import OrderVolumeDepthError, TradeFailed, ConvergenceError, OrderTimeout
+from CustomExceptions import OrderVolumeDepthError, TradeFailed, ConvergenceError, RestartEngine
 from Modules import ExchangeData
 from Modules.Session import Session
 from Modules.Orders import Order, LimitOrder, MarketOrder, OrderGenerator
@@ -13,12 +13,13 @@ from util.SequenceTracker import SequenceTracker
 from util.round_to_increment import  round_to_increment
 
 
+
 class SequenceTrader:
     
     START_CUR_CHANGE_EVENT_ID = 1
     TRADEABLE_MARKETS = ("USDT", "ETH", "BTC", "KCS", "USDC", "TUSD")
 
-    def __init__(self, DataManager:ExchangeData, Session: Session=None, starting_cur="USDT"):
+    def __init__(self, DataManager:ExchangeData, Session: Session=None, starting_cur:str="USDT"):
         self.DataManager = DataManager
         self.OrderVolumeSizer = OrderVolumeSizer(self.DataManager.Pairs)
         self.order_gen = OrderGenerator(self.DataManager)
@@ -32,10 +33,9 @@ class SequenceTrader:
         self.DataManager.subscribe_order_status()
         self.DataManager.subscribe_account_balance_notice()
 
-        self.best_exp_profit = -1
-        self.owned = starting_cur
+        self.owned = Session.starting_cur
                
-    def get_sequence_profit(self, sequence, autoExecute=True, forceExecute:bool=False, owned_amount=None):
+    def get_sequence_profit(self, sequence:tuple[tuple], autoExecute:bool=True, forceExecute:bool=False, owned_amount:float=None):
         ''' Check if the sequence matches the expected profit to within a specified tolerance
             If a volume is specified, it will return the average fill price
         '''
@@ -45,28 +45,25 @@ class SequenceTrader:
          
         starting_amount = self.session.balance[exp_owned]
         total = copy.copy(starting_amount)
-        pair_p_level_indices = []
         exp_fills = []
         for type, pair in sequence:
             fee = self.DataManager.Pairs[pair].fee
             tx = 1 - fee
             if "BUY" in type.name:
                 try:
-                    fill_price, p_level_index = self.OrderVolumeSizer.get_fill_price(type, pair, total)
+                    fill_price = self.OrderVolumeSizer.get_best_fill_price(type, pair, total)
                 except (OrderVolumeDepthError, ConvergenceError):
-                    return -1, None
+                    return -1
 
                 exp_fills.append(fill_price)
-                pair_p_level_indices.append(p_level_index)
                 total *= (1/fill_price)*tx
                 
             elif "SELL" in type.name:
                 try:
-                    fill_price, p_level_index = self.OrderVolumeSizer.get_fill_price(type, pair, total)
+                    fill_price = self.OrderVolumeSizer.get_best_fill_price(type, pair, total)
                 except (OrderVolumeDepthError, ConvergenceError):
-                    return -1, None, None
+                    return -1
 
-                pair_p_level_indices.append(p_level_index)
                 exp_fills.append(fill_price)
                 total *= fill_price*tx
             else:
@@ -77,9 +74,9 @@ class SequenceTrader:
             raise Exception("Too good, something went wrong")
         
         if forceExecute:
-            return self.execute_sequence(sequence, starting_amount, exp_fills, pair_p_level_indices, exp_profit=exp_profit)
+            return self.execute_sequence(sequence, starting_amount, exp_fills, exp_profit=exp_profit)
         if self.trading_conditions_statisfied(exp_profit, sequence):
-            return self.execute_sequence(sequence, starting_amount, exp_fills, pair_p_level_indices, exp_profit=exp_profit)  
+            return self.execute_sequence(sequence, starting_amount, exp_fills, exp_profit=exp_profit)  
 
         return exp_profit
         
@@ -99,7 +96,7 @@ class SequenceTrader:
         else:
             raise Exception("Unexpected trade type")
 
-    def execute_sequence(self, sequence,  trade_volume, exp_fills, pair_p_level_indices, exp_profit=None):
+    def execute_sequence(self, sequence,  trade_volume, exp_fills, exp_profit=None):
         ''' Execute trading sequence with the full session balance '''
         print("========= Executing Sequence =========")
         
@@ -108,35 +105,23 @@ class SequenceTrader:
         
         starting_trade_bal = trade_volume
         cur_amount = copy.copy(trade_volume)
-        last_cur = None  
         for i, trade in enumerate(sequence):
             print(f"{trade} with {cur_amount} units. Expected fill: {exp_fills[i]}")
             side, pair = trade
             limit_price = exp_fills[i]
             
             if side == tradeSide.BUY:
-                amount_to_buy = cur_amount*(1 - self.DataManager.Pairs[pair].fee)
-                order = self.order_gen.create_order_from_funds(side, pair, amount_to_buy, limit_price)
+                available_funds = cur_amount*(1 - self.DataManager.Pairs[pair].fee)
+                order = self.order_gen.create_order_from_funds(side, pair, available_funds, limit_price)
             else:
                 order = self.order_gen.create_order_from_funds(side, pair, cur_amount, limit_price)
-            
-            try:
-                cur_amount = self.session.submit_order(order)
-                self.owned = pair
-            except (TradeFailed, OrderTimeout):
-                self.Tracker.remember(trade)
-                self.remove_suspect_orders("asks", sequence, trade, pair_p_level_indices)
-                if last_cur:
-                    if last_cur in self.TRADEABLE_MARKETS:
-                        self.owned = last_cur
-                        events.post_event(self.START_CUR_CHANGE_EVENT_ID, data=last_cur)
-                    else:
-                        #self.return_home(from_cur=last_cur)
-                        print("Can't return home yet")
-                return False
 
-            last_cur = pair[0]
-            last_cur = pair[1]
+            order_succeeded = self.session.submit_order(order)
+            if order_succeeded:
+                self.owned = pair
+                cur_amount = order.received_amount
+            else:
+                self.handle_trade_failure(order, i)
 
         self.session.update_PL()
         actual_profit = (cur_amount - starting_trade_bal) / starting_trade_bal   
@@ -148,46 +133,53 @@ class SequenceTrader:
         print(f"Yield: {round(actual_profit, 5)}")
         return actual_profit
 
-    def remove_suspect_orders(self, book_type, sequence, trade, pair_p_level_indices):
-        pair = trade[1]
-        book_prices, _ = list(zip(*self.DataManager.Pairs[pair].orderbook.get_book(book_type)))
-        i_trade_failure = sequence.index(trade)
-        p_level_index = pair_p_level_indices[i_trade_failure]
+    def handle_trade_failure(self, order, i_seq_fail):
+        self.Tracker.remember((order.side, order.pair)) 
+        self.remove_suspect_orders(order)
+
+        if i_seq_fail == 0:
+            return
         
-        print(f"Suspected spoofing in {pair} orderbook. Removing {p_level_index + 1 } price levels.")
+        if self.owned in self.TRADEABLE_MARKETS:
+            ''' If a sequence failed and we have already made a trade out of the starting currency,
+                restart the arbitrage engine with a new starting currency
+            '''
+            raise RestartEngine
+        else:
+            self.return_home(from_cur=order.exp_owned)
 
-        for i in range(p_level_index + 1):
-            price = str(book_prices[i])
-            try:
-                if book_type == "bids":
-                    self.DataManager.Pairs[pair].orderbook.bids.pop(price)
-                elif book_type == "asks":
-                    self.DataManager.Pairs[pair].orderbook.asks.pop(price)
-            except KeyError:
-                print(f"Key error in level {i+1}")
-
-    def return_home(self, from_cur=None):
-        self.Session.refresh_balance()
-        balance = self.session.balance
+    
+    def remove_suspect_orders(self, order: Order):
+        try:
+            price = order.price
+        except:
+            print("Couldn't remove price")
+            return
+        
+        try:
+            if order.side == tradeSide.SELL:
+                self.DataManager.Pairs[order.pair].orderbook.bids.pop(order.price)
+            elif order.side == tradeSide.BUY:
+                self.DataManager.Pairs[order.pair].orderbook.asks.pop(price)
+        except KeyError:
+            print("Price level no longer exists")
+        
+    def return_home(self, from_cur):
+        
+        amount_owned = self.session.balance[from_cur]
         start_cur = self.session.starting_cur
-        print(f"Returning session balance to {start_cur}")
-        if from_cur:
-            balance = {from_cur:self.session.balance[from_cur]}
-        for cur in balance:
-            if cur != start_cur:
-                try:
-                    if (cur, start_cur) in self.DataManager.Pairs:
-                        print(f"Selling {(cur, start_cur)}")
-                        self.session.sell((cur, start_cur), balance[cur], type="market")
-                    elif (start_cur, cur) in self.DataManager.Pairs:
-                        print(f"Buying {(start_cur, cur)}")
-                        self.session.buy((start_cur, cur), balance[cur], type="market")
-                    else:
-                        print(f"Cannot return home with pair {(start_cur, cur)}: not in self.Datamanger.Pairs")
-                except TradeFailed:
-                    print(f"Could not return {cur} to starting currency")
-                    raise Exception("Fatal Error")
+        print(f"Returning session balance to {self.session.starting_cur}")
+
+        if (from_cur, start_cur) in self.DataManager.Pairs:
+            print(f"Selling {(from_cur, start_cur)}")
+            order = self.order_gen.create_order_from_funds(tradeSide.SELL, (from_cur, start_cur), amount_owned)
+        elif (start_cur, from_cur) in self.DataManager.Pairs:
+            print(f"Buying {(start_cur, from_cur)}")
+            order = self.order_gen.create_order_from_funds(tradeSide.BUY, (start_cur, from_cur), amount_owned)
+        else:
+            print(f"Cannot return home with pair {(start_cur, start_cur)}: not in self.Datamanger.Pairs")
         
+        self.session.submit_order(order)
         self.session.update_PL()
 
     
