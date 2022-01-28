@@ -10,20 +10,17 @@ class OrderVolumeSizer:
     BOOK_TYPE = {tradeSide.BUY:"asks", 
                  tradeSide.SELL:"bids"}
 
-    BASE_VOLUME_CALC = {tradeSide.BUY: lambda owned,price: owned*price,
+    BASE_VOLUME_CALC = {tradeSide.BUY: lambda owned,price: owned/price,
                         tradeSide.SELL: lambda owned,_: owned}
  
     def __init__(self, Pairs: Dict[tuple[str], object]) -> None:
         self.Pairs = Pairs
         self.convergence_tol = .001
         
-    def get_fill_price(self, side:tradeSide, pair:tuple[str], ownedAmount:float):
+    def get_average_fill_price(self, side:tradeSide, pair:tuple[str], ownedAmount:float):
         ''' 
-        tradeType: "buy" or "sell"
-        pair: ExchangeData pair to trade
-        ownedAmount: amount in qoute currency for buy types, amount in base currency for sell types
+        Return the average price that a market order would be expected to fill at based on the current ordebook state
         '''
-        self.pair = pair
         book_prices, book_sizes = self.__get_separated_book(pair, side)
         p_guess = book_prices[0]
       
@@ -48,11 +45,31 @@ class OrderVolumeSizer:
 
             # Recursively converge price
             if abs(real_volume - test_volume) < self.convergence_tol:
-                return fill_price, i
+                return fill_price
             else:
                 return converge_price(fill_price, c=c+1)
 
         return converge_price(p_guess)
+
+    def get_best_fill_price(self, side:tradeSide, pair:tuple[str], ownedAmount:float):
+        ''' 
+        Return the best existing orderbook price level that can cover the full trade volume.
+        Note: 
+        This is returns a price level that exists in the orderbook in its current state, so 
+        this function is better suited for limit order, while get_average_fill is better suited 
+        for a market order.
+        '''
+
+        book_prices, book_sizes = self.__get_separated_book(pair, side)
+        
+        i = 0
+        summed_volume = book_sizes[0]
+        test_volume = self.BASE_VOLUME_CALC[side](ownedAmount, book_prices[0])
+        while summed_volume < test_volume:
+            i += 1
+            summed_volume += book_sizes[i]
+
+        return book_prices[i]
 
     def __get_separated_book(self, pair, side) -> tuple[tuple[float]]: 
         ''' Return book prices and coorresponding volumes in a zipped tuple'''
@@ -80,28 +97,33 @@ class OrderSettlementHandler:
         self.activate_order_update_stream(API)
         self.activate_account_balance_update_stream(API)
         
-    def wait_to_receive(self) -> float:
+    def wait_to_receive(self) -> bool:
         print("waiting for order to complete")
         t1 = time.time()
         while not self.funds_settled:             
             elasped = time.time() - t1
             if elasped > self.order_max_wait_time:
                 print("Order response time out")
-                raise OrderTimeout
+                return False
             if self.Order.status == orderStatus.FAILED:
                 print("Trade failed")
-                raise TradeFailed
+                return False
             time.sleep(.01) 
-
-        print(f"Order status done for: {self.Order.pair}, now owned {self.received_amount} units")
-        return self.received_amount
+        
+        print(f"Order status done for: {self.Order.pair}, now owned {self.Order.received_amount} units")
+        return True
     
     def account_balance_update_listener(self, message:dict) -> None:
         oID = message['relationContext']['orderId']
         event = message['relationEvent']
-        if oID == self.Order.ID and event == "trade.setted":
+        cur = message['currency']
+        trade_settled = (oID == self.Order.ID and
+                      event == "trade.setted" and
+                      cur == self.Order.aquiring)
+
+        if trade_settled:
+            self.Order.received_amount = float(message['available'])
             self.funds_settled = True
-            self.received_amount = float(message['available'])
 
     def order_update_listener(self, message:dict) -> None:
         oID = message['orderId']
