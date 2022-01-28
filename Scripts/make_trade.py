@@ -10,8 +10,8 @@ from Modules import MarketOrder, OrderGenerator
 from enums import tradeSide, tradeType
 
 percent_balance_to_trade = 1 # Buy or sell x% of the balance in the account
-pair = ("ETH", "USDT")
-side = tradeSide.BUY
+pair = ("ACT", "ETH")
+side = tradeSide.SELL
 
 if __name__ == "__main__":
     api = KucoinAPI()
