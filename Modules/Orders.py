@@ -19,6 +19,7 @@ class Order:
         self.status: orderStatus=orderStatus.CREATED
         self.ID: str = None # Order IDs are created when submitted to the exchange
         self.update_msgs: list = None
+        self.received_amount: float = None
     
     def __eq__(self, check) -> bool:
         return self.ID == check.ID
@@ -54,7 +55,7 @@ class LimitOrder(Order):
             self.required_balance = self.amount
         return super().__post_init__()
         
-    class OrderGenerator:
+class OrderGenerator:
     ''' 
     Create and format orders based on exchange defined price increments, size increments, and 
     the balance of the Tradeable (Account or Session)
@@ -64,7 +65,9 @@ class LimitOrder(Order):
 
     def create_order_from_funds(self, side:tradeSide, pair:tuple[str,str], funds:float, price:float=None) -> Order:
         ''' Create and format an order with with amount of funds (owned currency) given'''
+        order_amount = funds
         if price is None:
+
             order = MarketOrder(side, pair, funds)
             return self.format_market_order(order)
         else:
