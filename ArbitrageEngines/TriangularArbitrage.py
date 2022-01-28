@@ -62,7 +62,7 @@ class TriangularArbitrageEngine:
         
         return tuple(sequences)
 
-    def begin(self, start_cur="USDT", population_size=200, loop_delay=.01):
+    def begin(self, start_cur="USDT", population_size=200, loop_delay=.1):
         '''
         Algorithm:
         1. Create pool of randomly generated sequences (of len population sizes)
