@@ -46,10 +46,9 @@ def display_stats(t1):
     print(f"Starting balance: {round(starting_usd_bal,3)}")
     print(f"Current balance: {round(usd_amount,3)}")
     print(f"Percentage Gain: {round(100*(usd_amount - starting_usd_bal)/starting_usd_bal, 3)} %")
-    print(f"Session owned: {SequenceTrader.owned}")
+    print(f"Session owned: {Session.last_cur_received}")
 
     print(f"Number of trades: {Session.trades}")
-    print(f"Best TA profit: {round(100*SequenceTrader.best_exp_profit,5)} %")
     print(ExchangeData.orderbook_updates)
     print(f"Elasped: {round((time.time() - t1)/60, 3)} minutes")
     print("")
@@ -60,4 +59,4 @@ if __name__ == "__main__":
     start_time = time.time()
     while True:
         display_stats(start_time)
-        time.sleep(10)
+        time.sleep(10) 
