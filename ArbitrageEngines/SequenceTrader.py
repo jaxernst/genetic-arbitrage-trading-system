@@ -166,7 +166,7 @@ class SequenceTrader:
         
     def return_home(self, from_cur):
         
-        amount_owned = self.session.balance[from_cur]
+        amount_owned = self.session.balance[self.session.last_cur_received]
         start_cur = self.session.starting_cur
         print(f"Returning session balance to {self.session.starting_cur}")
 
@@ -175,6 +175,7 @@ class SequenceTrader:
             order = self.order_gen.create_order_from_funds(tradeSide.SELL, (from_cur, start_cur), amount_owned)
         elif (start_cur, from_cur) in self.DataManager.Pairs:
             print(f"Buying {(start_cur, from_cur)}")
+            amount_owned = amount_owned*(1 - self.DataManager.Pairs[(start_cur, from_cur)].fee)
             order = self.order_gen.create_order_from_funds(tradeSide.BUY, (start_cur, from_cur), amount_owned)
         else:
             print(f"Cannot return home with pair {(start_cur, start_cur)}: not in self.Datamanger.Pairs")
