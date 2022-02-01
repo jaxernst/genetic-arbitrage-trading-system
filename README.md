@@ -14,4 +14,4 @@ The system can be broken down into several layers: The API layer, the Data Manag
 
 
 ## Use of this repository
-My intent of making this public is NOT for someone to use this system for their own trading as is. While all the code is there for someone to live trade on an exchange, I highly advise against this because this is not a mature project, and there are still plenty of problems to work through. I am actively developing this application, so files and modules will be frequently modifi3ed and added to.
+My intent of making this public is NOT for someone to use this system for their own trading as is. While all the code is there for someone to live trade on an exchange, I highly advise against this because this is not a mature project, and there are still plenty of problems to work through. I am actively developing this application, so files and modules will be frequently modified and added to.
