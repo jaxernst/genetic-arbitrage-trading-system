@@ -1,5 +1,5 @@
 # Genetic Arbitrage Trading System Overview
-A genetic algorithm based swap trading system to automate trading on cryptocurrency exchanges.
+A modular swap trading system to automate trading on cryptocurrency exchanges.
 
 ## Project Overview
 This project aims to implement a flexible trading system that can operate unsupervised on centralized and decentralized cryptocurrency exchanges simultaneously. The trading system utilizes a plugin style architecture that allows various trading strategies to be tested and traded with, but the current implementation focusses solely on identifying and trading arbitrage opportunities (inter-exchange and intra-exchange).
