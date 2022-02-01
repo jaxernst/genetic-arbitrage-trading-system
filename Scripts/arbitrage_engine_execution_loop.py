@@ -24,10 +24,8 @@ pairsInfo = {pair:info for pair, info in pairsInfo.items() if pair in viablePair
 ExchangeData.make_pairs(pairsInfo, populateSpread=False)
 #ExchangeData.build_orderbook()
    
-# Setup trade execution Modules
+# Setup trade execution Modules 
 Trader = TradeExecution.SequenceTrader(ExchangeData)
 
 TA = TriangularArbitrageEngine(Trader)
-
-
 TA.begin("USDT")
