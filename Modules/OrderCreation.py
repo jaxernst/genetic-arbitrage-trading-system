@@ -1,10 +1,10 @@
 from email.mime import base
 from Modules.DataManagement import ExchangeData
 from enums import orderStatus, tradeType, tradeSide, timeInForce
+from CustomExceptions import OrderVolumeDepthError
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_DOWN
 from typing import Dict
-
 
 @dataclass   
 class Order:
@@ -115,3 +115,71 @@ class OrderGenerator:
         ''' Round down to the exchange defined precision'''
         return float(Decimal(str(amount)).quantize(Decimal(precision), rounding=ROUND_DOWN))
 
+class OrderVolumeSizer:
+    BOOK_TYPE = {tradeSide.BUY:"asks", 
+                 tradeSide.SELL:"bids"}
+
+    BASE_VOLUME_CALC = {tradeSide.BUY: lambda owned,price: owned/price,
+                        tradeSide.SELL: lambda owned,_: owned}
+ 
+    def __init__(self, Pairs: Dict[tuple[str], object]) -> None:
+        self.Pairs = Pairs
+        self.convergence_tol = .001
+        
+    def get_average_fill_price(self, side:tradeSide, pair:tuple[str], ownedAmount:float):
+        ''' 
+        Return the average price that a market order would be expected to fill at based on the current ordebook state
+        '''
+        book_prices, book_sizes = self.__get_separated_book(pair, side)
+        p_guess = book_prices[0]
+      
+        def converge_price(p_guess, c=0):
+            if c > 5:
+                a = 1
+            
+            # Get amount to be filled based on the guess fill price
+            test_volume = self.BASE_VOLUME_CALC[side](ownedAmount, p_guess)
+
+            # Determine number of price levels needed to satisfy volume
+            i = 0 
+            while sum(book_sizes[:i+1]) < test_volume:
+                i += 1
+                if i > len(book_sizes):
+                    raise OrderVolumeDepthError
+
+            # Calculate the average fill price
+            remaining_volume = (test_volume - sum(book_sizes[:i]))
+            fill_price = (sum([price*vol for price,vol in zip(book_prices[:i], book_sizes[:i])]) + remaining_volume*book_prices[i]) / (test_volume)
+            real_volume = self.BASE_VOLUME_CALC[side](ownedAmount, fill_price)
+
+            # Recursively converge price
+            if abs(real_volume - test_volume) < self.convergence_tol:
+                return fill_price
+            else:
+                return converge_price(fill_price, c=c+1)
+
+        return converge_price(p_guess)
+
+    def get_best_fill_price(self, side:tradeSide, pair:tuple[str], ownedAmount:float):
+        ''' 
+        Return the best existing orderbook price level that can cover the full trade volume.
+        Note: 
+        This is returns a price level that exists in the orderbook in its current state, so 
+        this function is better suited for limit order, while get_average_fill is better suited 
+        for a market order.
+        '''
+
+        book_prices, book_sizes = self.__get_separated_book(pair, side)
+        
+        i = 0
+        summed_volume = book_sizes[0]
+        test_volume = self.BASE_VOLUME_CALC[side](ownedAmount, book_prices[0])
+        while summed_volume < test_volume:
+            i += 1
+            summed_volume += book_sizes[i]
+
+        return book_prices[i]
+
+    def __get_separated_book(self, pair, side) -> tuple[tuple[float]]: 
+        ''' Return book prices and coorresponding volumes in a zipped tuple'''
+        return tuple(zip(*self.Pairs[pair].orderbook.get_book(self.BOOK_TYPE[side])))
