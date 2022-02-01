@@ -9,8 +9,7 @@ This project aims to implement a flexible trading system that can operate unsupe
 The system can be broken down into several layers: The API layer, the Data Management layer, the Trading Layer, and the Account layer. The following ULM class diagram provides an overview of these layers and the components involved:
 
 
-
-This project is named after its primary (and first developed) ArbitrageEngine, which utilizes a genetic algorithm to identify arbitrage opporunties in cryptocurrency markets. This type of arbitrage stems from triangular arbitrage, but allows for swap-sequences between more than 3 currencies. The genetic algorithm performs best with a large number of assets to swap between, as it gains an edge over competion when the perumations of tradeable sequences are very large. The source modules also include full functionality for API/Websocket authentication and trade automation (only Kucoin supported currently).
+![alt text](https://github.com/jaxernst/GenticArbitrageTradingSystem/blob/main/SystemArchitecture.png?raw=true)
 
 
 
