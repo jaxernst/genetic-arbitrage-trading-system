@@ -8,7 +8,7 @@ This project aims to implement a flexible trading system that can operate unsupe
 This is a personal project of mine, and while the project is still very young (~3 months), I spend much of my free time adding features, optimizing, and solving issues that arise. I am currently the sole contributor to the project, thus the documentation is limited. As the project matures, I hope to provide more extensive documentation and open it up for contribution.
 
 ## System Architecture
-The system can be broken down into several layers: The API layer, the Data Management layer, the Trading Layer, and the Account layer. The following ULM class diagram provides an overview of these layers and the components involved:
+The system can be broken down into several layers: The API layer, the Data Management layer, the Trading Layer, and the Account layer. The following UML class diagram provides an overview of these layers and the components involved:
 
 
 ![SystemArchitecureDiagram](https://github.com/jaxernst/GenticArbitrageTradingSystem/blob/main/SystemArch.png?raw=true)
