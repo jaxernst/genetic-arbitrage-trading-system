@@ -5,8 +5,8 @@ from util import events
 from CustomExceptions import OrderVolumeDepthError, TradeFailed, ConvergenceError, RestartEngine
 from Modules import ExchangeData
 from Modules.Session import Session
-from Modules.Orders import Order, LimitOrder, MarketOrder, OrderGenerator
-from Modules.OrderUtilities import OrderVolumeSizer
+from Modules.OrderCreation import Order, LimitOrder, MarketOrder, OrderGenerator
+from Modules.OrderSettlement import OrderVolumeSizer
 from enums import tradeType, tradeSide
 from util.obj_funcs import save_obj, load_obj
 from util.SequenceTracker import SequenceTracker
