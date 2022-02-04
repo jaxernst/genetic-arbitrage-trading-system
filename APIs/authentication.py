@@ -7,7 +7,10 @@ from util.obj_funcs import load_json
 
 class KucoinAuthenticator:
     unlocked = False
-    key = load_json("Kucoin_API_Key.json")
+    try:
+        key = load_json("Kucoin_API_Key.json")
+    except:
+        raise Exception("A json file with the following fields must be saved to the cwd: API_KEY, API_SECRET, PASSPHRASE")
     API_KEY = key["API_KEY"]
     API_SECRET = key["API_SECRET"]
     if "PASSPHRASE" in key:
