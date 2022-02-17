@@ -7,7 +7,7 @@ import time
 from requests.models import CaseInsensitiveDict
 
 from Modules.Account import Account, Tradeable
-from Modules.Orders import Order
+from Modules.OrderCreation import Order
 
 from util.obj_funcs import save_obj, load_obj
 from CustomExceptions import OrderVolumeDepthError, TooManyRequests, TradeFailed, OrderTimeout
