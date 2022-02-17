@@ -1,6 +1,6 @@
-from Modules.Orders import LimitOrder, MarketOrder
+from Modules.OrderCreation import LimitOrder, MarketOrder
 from Modules import Order
-from Modules.OrderUtilities import OrderSettlementHandler
+from Modules.OrderSettlement import OrderSettlementHandler
 from APIs.ExchangeAPI import ExchangeAPI
 from typing import Dict, Optional
 
