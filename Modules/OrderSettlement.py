@@ -16,7 +16,8 @@ class OrderSettlementHandler:
                    "match":orderStatus.PARTIAL_FILL,
                    "filled":orderStatus.FILLED}
 
-
+    
+        
     def __init__(self, API:ExchangeAPI, order:Order):
         self.Order = order
 
@@ -76,6 +77,7 @@ class OrderSettlementHandler:
         else:
             self.Order.status = self.status_keys[status]
 
+
     def activate_account_balance_update_stream(self, API) -> None:
         if API.ACCOUNT_BALANCE_UPDATE_EVENT_ID not in API.active_streams:
             API.subscribe_account_balance_notice()
@@ -85,5 +87,3 @@ class OrderSettlementHandler:
         if API.ACCOUNT_BALANCE_UPDATE_EVENT_ID not in API.active_streams:
             API.subscribe_order_status()
 
-
-    
