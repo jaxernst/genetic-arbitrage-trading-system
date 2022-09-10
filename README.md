@@ -18,11 +18,7 @@ The system is object oriented and can be broken down into several layers: The AP
 - Multi-threading with daemon threads
 - Event driven functionality 
 - Composition favored design
-- Limit inheritence coupling
-- Only accept custom exceptions
-- Use abstract class templates
-- Favor Dataclasses
-- Favor Enumerations 
+
 
 ## Use of this repository
 My intent of making this public is NOT for someone to use this system for their own trading as is. While all the code is there for someone to live trade on an exchange, I highly advise against this because this is not a mature project, and there are still plenty of problems to work through. This code is here for anyone to read, learn from, and borrow from. 
